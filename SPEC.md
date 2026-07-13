@@ -1,9 +1,12 @@
-# Personal Kanban — Specification
+# Spec: personal-kanban
 
-## Overview
+## Context
 
-A personal kanban board tool with a CLI and TUI interface, built in Rust. The architecture
-follows a three-layer pattern:
+A personal kanban board tool with a CLI and TUI interface, built in Rust. The binary is
+named `kanban`, with a `pk` alias installed alongside it.
+
+The architecture follows a strict three-layer pattern, and the checkpoints below are
+organized along those layers:
 
 1. **Core** — Pure types, enums, parsing logic, SQL query constructors, validation. No side
    effects, no I/O.
@@ -15,121 +18,94 @@ follows a three-layer pattern:
 Both the CLI and TUI invoke the same shell operations. Every action available in the TUI is
 a CLI subcommand and vice versa.
 
-Binary name: `kanban` (with a `pk` alias installed alongside it).
+**Dependency Direction**
 
----
+```
+UX (cli/, tui/)
+    ↓ calls
+Shell (shell/)
+    ↓ uses
+Core (core/)
+```
 
-## 1. Data Model
+Core has zero dependencies on shell or UX. Shell depends on core. UX depends on shell (and
+transitively on core for types). The module boundary enforces this: `core/` has no `use` of
+anything from `shell/`, `cli/`, or `tui/`.
 
-### Board
+**Data Model**
 
-A board is a self-contained unit. MVP ships with a single default board created on first run.
-The core models a board as an isolated instance so multi-board support later is just
+**Board** — a self-contained unit. MVP ships with a single default board created on first
+run. The core models a board as an isolated instance so multi-board support later is just
 instantiation + UX glue.
 
-| Field        | Type       | Notes                          |
-|--------------|------------|--------------------------------|
-| `id`         | `TEXT PK`  | nanoid                         |
-| `name`       | `TEXT`     | Human-readable board name      |
-| `created_at` | `DATETIME` | Auto-set on creation           |
-| `updated_at` | `DATETIME` | Auto-set on mutation           |
+| Field        | Type       | Notes                     |
+|--------------|------------|---------------------------|
+| `id`         | `TEXT PK`  | nanoid                    |
+| `name`       | `TEXT`     | Human-readable board name |
+| `created_at` | `DATETIME` | Auto-set on creation      |
+| `updated_at` | `DATETIME` | Auto-set on mutation      |
 
-### Column
+**Column** — ordered containers for tasks within a board.
 
-Columns are ordered containers for tasks within a board.
+| Field        | Type      | Notes                        |
+|--------------|-----------|------------------------------|
+| `id`         | `TEXT PK` | nanoid                       |
+| `board_id`   | `TEXT FK` | References `board.id`        |
+| `name`       | `TEXT`    | Display name (e.g. "Doing")  |
+| `position`   | `INTEGER` | Explicit ordering, 0-indexed |
+| `created_at` | `DATETIME`| Auto-set                     |
+| `updated_at` | `DATETIME`| Auto-set                     |
 
-| Field        | Type       | Notes                                    |
-|--------------|------------|------------------------------------------|
-| `id`         | `TEXT PK`  | nanoid                                   |
-| `board_id`   | `TEXT FK`  | References `board.id`                    |
-| `name`       | `TEXT`     | Display name (e.g. "Doing")              |
-| `position`   | `INTEGER`  | Explicit ordering, 0-indexed             |
-| `created_at` | `DATETIME` | Auto-set                                 |
-| `updated_at` | `DATETIME` | Auto-set                                 |
-
-### Priority
-
-Priority is a first-class entity stored in its own table, not a hardcoded enum. This allows
+**Priority** — a first-class entity stored in its own table, not a hardcoded enum. Allows
 users to define custom priority levels in future versions.
 
-| Field  | Type       | Notes                          |
-|--------|------------|--------------------------------|
-| `id`   | `TEXT PK`  | nanoid                         |
-| `name` | `TEXT`     | Display name (e.g. "high")     |
+| Field  | Type      | Notes                      |
+|--------|-----------|----------------------------|
+| `id`   | `TEXT PK` | nanoid                     |
+| `name` | `TEXT`    | Display name (e.g. "high") |
 
-Default priorities seeded on init: `low`, `medium`, `high`.
+**Task**
 
-### Task
+| Field         | Type      | Notes                             |
+|---------------|-----------|-----------------------------------|
+| `id`          | `TEXT PK` | nanoid                            |
+| `column_id`   | `TEXT FK` | References `column_.id`           |
+| `title`       | `TEXT`    | Required, non-empty               |
+| `description` | `TEXT`    | Optional, can be empty            |
+| `priority_id` | `TEXT FK` | References `priority.id`          |
+| `position`    | `INTEGER` | Ordering within column, 0-indexed |
+| `created_at`  | `DATETIME`| Auto-set                          |
+| `updated_at`  | `DATETIME`| Auto-set                          |
 
-| Field         | Type       | Notes                                    |
-|---------------|------------|------------------------------------------|
-| `id`          | `TEXT PK`  | nanoid                                   |
-| `column_id`   | `TEXT FK`  | References `column_.id`                  |
-| `title`       | `TEXT`     | Required, non-empty                      |
-| `description` | `TEXT`     | Optional, can be empty                   |
-| `priority_id` | `TEXT FK`  | References `priority.id`                 |
-| `position`    | `INTEGER`  | Ordering within column, 0-indexed        |
-| `created_at`  | `DATETIME` | Auto-set                                 |
-| `updated_at`  | `DATETIME` | Auto-set                                 |
+**Default board state:** four columns — Backlog (0), Todo (1), Doing (2), Done (3) — and
+three priorities: `low`, `medium`, `high`. Default priority for new tasks: `medium`.
 
-### ID Generation and Short-ID Resolution
+**ID Generation and Short-ID Resolution**
 
 All entity IDs use nanoid (short random strings, e.g. `V1StGXR8_Z5jdHi6B`).
 
 **Short-ID matching:** Users can reference any entity by a prefix of its ID — only enough
-characters to be unique within the selectable set for that operation. For example, if the
-board has tasks with IDs `a3x9k2`, `a3bQ7f`, and `m8rT2p`, then:
+characters to be unique within the selectable set for that operation. For example, given
+task IDs `a3x9k2`, `a3bQ7f`, and `m8rT2p`:
 
-- `m` uniquely matches `m8rT2p` (only one ID starts with `m`)
-- `a3x` uniquely matches `a3x9k2` (both `a3...` IDs need 3 chars to disambiguate)
-- `a3` is ambiguous → error with the matching candidates listed
+- `m` uniquely matches `m8rT2p`
+- `a3x` uniquely matches `a3x9k2`
+- `a3` is ambiguous → error listing the matching candidates
 
-**Core function:** `resolve_id(prefix: &str, candidates: &[&str]) -> Result<String, IdError>`
+**TUI display:** task IDs render with the minimum-unique prefix in bold (or bright color)
+and the remaining characters dimmed (jj-style). The minimum-unique length is computed per
+render frame against the visible set.
 
-Returns the full ID if exactly one candidate matches the prefix. Returns
-`IdError::Ambiguous { prefix, matches }` if multiple match. Returns
-`IdError::NotFound { prefix }` if none match.
+**Storage**
 
-**TUI display:** In the TUI, task IDs are rendered with the minimum-unique prefix in bold
-(or bright color) and the remaining characters dimmed, so the user can see at a glance what
-to type. The minimum-unique length is computed per render frame against the visible set.
+Single-file SQLite via `rusqlite` with the `bundled` feature (SQLite amalgamation compiled
+into the binary — no external C dependency at runtime).
 
-**Core function:** `min_unique_prefixes(ids: &[&str]) -> Vec<(String, usize)>`
+Default location: `$XDG_DATA_HOME/kanban/kanban.db` (typically
+`~/.local/share/kanban/kanban.db`). Overridable via `--db <path>` (CLI flag) or `KANBAN_DB`
+(env var). Priority: CLI flag > env var > XDG default.
 
-Returns each ID paired with the minimum prefix length needed for uniqueness.
-
-### Default Board State
-
-A new board is initialized with four columns in this order:
-
-1. Backlog (position 0)
-2. Todo (position 1)
-3. Doing (position 2)
-4. Done (position 3)
-
-And three default priorities: `low`, `medium`, `high`.
-
-Default priority for new tasks: `medium`.
-
----
-
-## 2. Storage
-
-### Format: SQLite
-
-Single-file SQLite database via `rusqlite` with the `bundled` feature (SQLite amalgamation
-compiled into the binary — no external C dependency at runtime).
-
-Default location: `$XDG_DATA_HOME/kanban/kanban.db`
-(typically `~/.local/share/kanban/kanban.db`)
-
-Overridable via:
-- `--db <path>` CLI flag
-- `KANBAN_DB` environment variable
-
-Priority: CLI flag > env var > XDG default.
-
-### Schema
+Schema:
 
 ```sql
 CREATE TABLE board (
@@ -174,89 +150,87 @@ CREATE INDEX idx_column_board ON column_(board_id, position);
 CREATE INDEX idx_task_column ON task(column_id, position);
 ```
 
-Note: `column_` has a trailing underscore because `column` is a SQL reserved word.
+Notes: `column_` has a trailing underscore because `column` is a SQL reserved word.
+`task.column_id` deliberately does NOT use `ON DELETE CASCADE` — column deletion requires an
+explicit user decision about orphaned tasks.
 
-Note: `task.column_id` does NOT use `ON DELETE CASCADE`. Column deletion requires explicit
-user decision about orphaned tasks (see section 5, Column Deletion Behavior).
+Migrations are numbered SQL files (`NNN_description.sql`) under `migrations/`, embedded into
+the binary at compile time (via `include_str!` or `rust-embed`). On startup the shell creates
+`_migrations` if absent, reads applied migration ids, runs any unapplied migrations in order
+within a transaction, and records each one.
 
-### Migrations
+This database serves a single user's personal kanban; read/write volume is negligible. The
+schema prioritizes clarity and correctness over optimization.
 
-Migrations are stored as numbered SQL files in the source tree:
+**Command Interface**
+
+Every command maps to a shell operation; every shell operation is reachable from both CLI
+and TUI.
+
+| Command                                                         | Shell operation                        |
+|-----------------------------------------------------------------|----------------------------------------|
+| `kanban init`                                                   | `init_board(name)`                     |
+| `board list` (alias `kanban ls`)                                | `list_boards()`                        |
+| `board rename`                                                  | `rename_board(id, name)`               |
+| `board show`                                                    | `load_board_state(id)`                 |
+| `column add <name>`                                             | `add_column(board_id, name)`           |
+| `column rename <id> <new-name>`                                 | `rename_column(id, new_name)`          |
+| `column remove <id>`                                            | `remove_column(id, orphan_action)`     |
+| `column move <id> <position>`                                   | `move_column(id, position)`            |
+| `column list`                                                   | `list_columns(board_id)`               |
+| `task add <title> --column <col> [--desc <d>] [--priority <p>]` | `add_task(col, title, desc, priority)` |
+| `task edit <id> [--title <t>] [--desc <d>] [--priority <p>]`    | `edit_task(id, changes)`               |
+| `task move <id> <column> [--position <pos>]`                    | `move_task(id, column, position)`      |
+| `task remove <id>`                                              | `remove_task(id)`                      |
+| `task show <id>`                                                | `show_task(id)`                        |
+| `task list [--column <col>] [--priority <p>]`                   | `list_tasks(board_id, filter)`         |
+
+All `<id>` arguments accept full IDs or short prefixes, resolved via `core::resolve_id()`.
+Columns may also be referenced by name (case-insensitive); the shell tries ID resolution
+first, then falls back to name matching (duplicate column names are disallowed, so name
+matching is unambiguous).
+
+**Out of Scope (MVP)**
+
+REST API, multi-machine sync, automated backup, multi-board UI, epics/parent tasks, calendar
+view, sprints, due dates, assignees, comments, undo/redo, task search/filter, custom themes,
+`--json` output, and user-defined custom priorities (the table exists but MVP seeds only
+low/medium/high).
+
+**Dependencies**
+
+`clap`, `ratatui`, `crossterm`, `rusqlite` (bundled), `nanoid`, `serde`, `chrono`, `dirs`,
+`anyhow`, `thiserror`, `dialoguer`. These are already declared in `Cargo.toml`.
+
+**Module Structure**
+
+Single crate, multiple modules:
 
 ```
-migrations/
-├── 001_initial_schema.sql
-├── 002_some_future_change.sql
-└── ...
+src/
+├── main.rs              # Entry point: arg dispatch, first-run init
+├── core/  { mod, types, validation, position, id, queries, error }
+├── shell/ { mod, db, ops, config }
+├── cli/   { mod, interactive, output }
+└── tui/   { mod, app, input, render, widgets/{mod,board,card,dialog,help} }
 ```
 
-These are embedded into the binary at compile time (via `include_str!` or `rust-embed`).
+A workspace is deferred; if the project grows (e.g. a REST API crate), extract `core/` into
+a workspace member then.
 
-On startup, the shell:
-1. Creates the `_migrations` table if it doesn't exist
-2. Reads which migrations have been applied (by `id`)
-3. Runs any unapplied migrations in order, within a transaction
-4. Records each applied migration in `_migrations`
+## Checkpoint: core
 
-Migration files are plain SQL. Each file name follows the pattern
-`NNN_description.sql` where `NNN` is a zero-padded sequential number.
+Goal: Implement the pure core library (types, validation, position math, ID resolution, SQL query constructors) with full unit-test coverage and no I/O.
 
-### Performance Note
+### Requirements
 
-This database serves a single user's personal kanban. Read/write volume is negligible.
-The schema prioritizes clarity and correctness over optimization. Foreign keys, separate
-tables for priority, and explicit position columns are all fine at this scale.
+The core (`src/core/`) is pure library code: no I/O, no side effects, no `std::fs`, no
+database access. It must not `use` anything from `shell/`, `cli/`, or `tui/`.
 
----
-
-## 3. Architecture: Core / Shell / UX
-
-### Layer 1: Core (`core/`)
-
-Pure library code. No I/O, no side effects, no `std::fs`, no database access.
-
-The core provides:
-
-#### Types and Enums
+**Types** (`types.rs`): `Board`, `Column`, `Priority`, `Task` as described in the Context
+data model, plus:
 
 ```rust
-/// Domain entity: a kanban board
-struct Board {
-    id: String,
-    name: String,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
-}
-
-/// Domain entity: a column within a board
-struct Column {
-    id: String,
-    board_id: String,
-    name: String,
-    position: i32,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
-}
-
-/// Domain entity: a priority level
-struct Priority {
-    id: String,
-    name: String,
-}
-
-/// Domain entity: a task within a column
-struct Task {
-    id: String,
-    column_id: String,
-    title: String,
-    description: String,
-    priority_id: String,
-    position: i32,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
-}
-
-/// Complete snapshot of a board's state, used as input to core functions
 struct BoardState {
     board: Board,
     columns: Vec<Column>,       // sorted by position
@@ -264,7 +238,6 @@ struct BoardState {
     priorities: Vec<Priority>,
 }
 
-/// Describes a change to a task (only populated fields are updated)
 struct TaskChanges {
     title: Option<String>,
     description: Option<String>,
@@ -273,71 +246,58 @@ struct TaskChanges {
     position: Option<i32>,
 }
 
-/// Describes a change to a column
-struct ColumnChanges {
-    name: Option<String>,
-    position: Option<i32>,
-}
+struct ColumnChanges { name: Option<String>, position: Option<i32> }
+
+struct TaskFilter { column_id: Option<String>, priority_id: Option<String> }
+
+enum OrphanAction { MoveToFirst, Delete }
+
+enum SqlParam { Text(String), Int(i32) }
+
+enum EntityTable { Column, Task }
 ```
 
-#### Validation Functions
+**Validation** (`validation.rs`):
 
 ```rust
-/// Validate a task title (non-empty, reasonable length)
 fn validate_title(title: &str) -> Result<(), DomainError>
-
-/// Validate a column name (non-empty, unique within board)
 fn validate_column_name(name: &str, existing: &[Column]) -> Result<(), DomainError>
-
-/// Validate a priority exists
 fn validate_priority(priority_id: &str, priorities: &[Priority]) -> Result<(), DomainError>
-
-/// Validate a column exists within the board
 fn validate_column_exists(column_id: &str, columns: &[Column]) -> Result<(), DomainError>
 ```
 
-#### Position Computation
+**Position computation** (`position.rs`):
 
 ```rust
-/// Compute the next position for a new item in an ordered list
 fn next_position(existing_positions: &[i32]) -> i32
-
-/// Recompute positions to be gap-free (0, 1, 2, ...) after a delete or move
 fn recompute_positions(items: &[(String, i32)]) -> Vec<(String, i32)>
-
-/// Compute new positions after inserting at a specific index
 fn positions_after_insert(existing: &[(String, i32)], insert_at: i32) -> Vec<(String, i32)>
-
-/// Compute new positions after moving an item from one index to another
 fn positions_after_move(existing: &[(String, i32)], from: i32, to: i32) -> Vec<(String, i32)>
 ```
 
-#### ID Resolution
+`recompute_positions` must yield gap-free 0,1,2,… ordering after deletes/moves.
+
+**ID resolution** (`id.rs`):
 
 ```rust
-/// Resolve a user-provided ID prefix to a full ID
-/// Returns the full ID if exactly one candidate starts with the prefix
 fn resolve_id(prefix: &str, candidates: &[&str]) -> Result<String, IdError>
-
-/// Compute the minimum unique prefix length for each ID in a set
-/// Returns Vec<(full_id, min_prefix_len)>
 fn min_unique_prefixes(ids: &[&str]) -> Vec<(String, usize)>
 ```
 
-#### SQL Query Constructors
+`resolve_id` returns the full ID on exactly one match, `IdError::Ambiguous { prefix, matches }`
+on multiple, `IdError::NotFound { prefix }` on none. `min_unique_prefixes` returns each ID
+paired with the minimum prefix length needed for uniqueness within the set.
 
-The core constructs SQL query strings and parameter lists, but never executes them. This
-keeps query logic testable without a database.
+**SQL query constructors** (`queries.rs`) — construct SQL strings and param lists but never
+execute:
 
 ```rust
-/// Queries for reading state
 fn query_board_by_id() -> &'static str
 fn query_columns_by_board() -> &'static str
 fn query_tasks_by_board() -> &'static str
 fn query_priorities() -> &'static str
 fn query_all_boards() -> &'static str
 
-/// Queries for mutations — return (sql, params) tuples
 fn insert_board_sql(board: &Board) -> (String, Vec<SqlParam>)
 fn insert_column_sql(column: &Column) -> (String, Vec<SqlParam>)
 fn insert_task_sql(task: &Task) -> (String, Vec<SqlParam>)
@@ -349,678 +309,295 @@ fn delete_tasks_by_column_sql(column_id: &str) -> (String, Vec<SqlParam>)
 fn move_tasks_to_column_sql(from_column_id: &str, to_column_id: &str) -> (String, Vec<SqlParam>)
 fn update_position_sql(table: EntityTable, id: &str, position: i32) -> (String, Vec<SqlParam>)
 fn insert_priority_sql(priority: &Priority) -> (String, Vec<SqlParam>)
-
-/// Param type for SQL query constructors
-enum SqlParam {
-    Text(String),
-    Int(i32),
-}
-
-/// Which table a position update targets
-enum EntityTable {
-    Column,
-    Task,
-}
 ```
 
-#### Error Types
+**Error types** (`error.rs`): `DomainError` (thiserror) with variants `EmptyTitle`,
+`TitleTooLong { max }`, `EmptyColumnName`, `DuplicateColumnName { name }`,
+`ColumnNotFound { id }`, `TaskNotFound { id }`, `BoardNotFound { id }`,
+`PriorityNotFound { id }`, `CannotDeleteLastColumn`, `DuplicateBoardName { name }`,
+`PositionOutOfRange { position, max }`; and `IdError` with `NotFound { prefix }` and
+`Ambiguous { prefix, matches }`. Error message strings match the Error Catalog in the Notes.
 
-```rust
-#[derive(Debug, thiserror::Error)]
-enum DomainError {
-    #[error("title cannot be empty")]
-    EmptyTitle,
+Every core function has unit tests, including the short-ID examples above
+(`m`→`m8rT2p`, `a3x`→`a3x9k2`, `a3`→ambiguous).
 
-    #[error("title exceeds maximum length of {max} characters")]
-    TitleTooLong { max: usize },
+### Validation
 
-    #[error("column name cannot be empty")]
-    EmptyColumnName,
-
-    #[error("column '{name}' already exists on this board")]
-    DuplicateColumnName { name: String },
-
-    #[error("column not found: '{id}'")]
-    ColumnNotFound { id: String },
-
-    #[error("task not found: '{id}'")]
-    TaskNotFound { id: String },
-
-    #[error("board not found: '{id}'")]
-    BoardNotFound { id: String },
-
-    #[error("priority not found: '{id}'")]
-    PriorityNotFound { id: String },
-
-    #[error("cannot delete the last column on a board")]
-    CannotDeleteLastColumn,
-
-    #[error("board '{name}' already exists")]
-    DuplicateBoardName { name: String },
-
-    #[error("position {position} is out of range (0..{max})")]
-    PositionOutOfRange { position: i32, max: i32 },
-}
-
-#[derive(Debug, thiserror::Error)]
-enum IdError {
-    #[error("no match for ID prefix '{prefix}'")]
-    NotFound { prefix: String },
-
-    #[error("ambiguous ID prefix '{prefix}' matches: {matches:?}")]
-    Ambiguous { prefix: String, matches: Vec<String> },
-}
+```validation
+cargo test core:: -- --nocapture
+cargo clippy -- -D warnings
 ```
 
-### Layer 2: Imperative Shell (`shell/`)
+### Notes
 
-Owns all I/O. Executes operations against SQLite using core types, query constructors,
-and validation functions.
+Error catalog (message strings the tests assert on):
 
-The shell exposes an **operations API** — one function per user-facing action. Each
-operation follows the same pattern:
+| Error                    | CLI message                                                       |
+|--------------------------|------------------------------------------------------------------|
+| `EmptyTitle`             | `title cannot be empty`                                           |
+| `TitleTooLong`           | `title exceeds maximum length of {max} characters`               |
+| `EmptyColumnName`        | `column name cannot be empty`                                     |
+| `DuplicateColumnName`    | `column '{name}' already exists on this board`                    |
+| `ColumnNotFound`         | `column not found: '{id}'`                                        |
+| `TaskNotFound`           | `task not found: '{id}'`                                          |
+| `BoardNotFound`          | `board not found: '{id}'`                                         |
+| `PriorityNotFound`       | `priority not found: '{id}'`                                      |
+| `CannotDeleteLastColumn` | `cannot delete the last column on a board`                        |
+| `DuplicateBoardName`     | `board '{name}' already exists`                                   |
+| `PositionOutOfRange`     | `position {position} is out of range (0..{max})`                 |
+| `IdError::NotFound`      | `no match for ID prefix '{prefix}'`                              |
+| `IdError::Ambiguous`     | `ambiguous ID prefix '{prefix}' matches: {matches}`             |
 
-1. Load relevant state from SQLite (using core query constructors)
-2. Validate inputs using core validation functions
-3. Construct mutation queries using core SQL constructors
-4. Execute queries within a transaction
-5. Return a result type that the UX layer can render
+## Checkpoint: shell
+
+Goal: Implement the imperative shell (SQLite-backed operations API and migration runner) so every user-facing action has a working, transactional shell function.
+
+### Requirements
+
+The shell (`src/shell/`) owns all I/O. Each operation: (1) loads relevant state via core
+query constructors, (2) validates via core validation functions, (3) constructs mutation
+queries via core SQL constructors, (4) executes within a transaction, (5) returns a
+render-ready result type. The shell never contains business rules the core should own; it
+orchestrates.
+
+**DB path resolution** (`config.rs`): CLI flag > `KANBAN_DB` env var > XDG default
+(`$XDG_DATA_HOME/kanban/kanban.db`).
+
+**Db handle and migrations** (`db.rs`):
 
 ```rust
-/// Database handle wrapper
-struct Db {
-    conn: rusqlite::Connection,
-}
+struct Db { conn: rusqlite::Connection }
 
 impl Db {
-    /// Open or create the database, run pending migrations
-    fn open(path: &Path) -> Result<Self>
-
-    /// Load a full board snapshot
+    fn open(path: &Path) -> Result<Self>            // creates file+dirs, runs migrations
     fn load_board_state(&self, board_id: &str) -> Result<BoardState>
-
-    /// Load all boards (id + name only, for listing)
     fn list_boards(&self) -> Result<Vec<Board>>
 }
+```
 
-/// Shell operations — each corresponds to a user-facing command
-/// All operations take &Db (or &mut for writes) and return Result<T>
+`open` must create parent directories and the DB file if missing, then run all pending
+migrations in order inside a transaction, recording each in `_migrations`. Migration `001`
+lives at `migrations/001_initial_schema.sql` and is embedded at compile time.
 
-// -- Board operations --
+**Operations** (`ops.rs`) — each resolves ID/prefix args via `core::resolve_id()` before
+proceeding:
+
+```rust
 fn init_board(db: &Db, name: &str) -> Result<Board>
 fn list_boards(db: &Db) -> Result<Vec<Board>>
 fn rename_board(db: &Db, board_id: &str, new_name: &str) -> Result<()>
 
-// -- Column operations --
 fn add_column(db: &Db, board_id: &str, name: &str) -> Result<Column>
 fn rename_column(db: &Db, column_id_prefix: &str, new_name: &str) -> Result<()>
 fn remove_column(db: &Db, column_id_prefix: &str, orphan_action: OrphanAction) -> Result<()>
 fn move_column(db: &Db, column_id_prefix: &str, new_position: i32) -> Result<()>
 fn list_columns(db: &Db, board_id: &str) -> Result<Vec<Column>>
 
-// -- Task operations --
 fn add_task(db: &Db, column_id_prefix: &str, title: &str, desc: &str, priority_id_prefix: &str) -> Result<Task>
 fn edit_task(db: &Db, task_id_prefix: &str, changes: &TaskChanges) -> Result<()>
 fn move_task(db: &Db, task_id_prefix: &str, target_column_prefix: &str, position: Option<i32>) -> Result<()>
 fn remove_task(db: &Db, task_id_prefix: &str) -> Result<()>
 fn show_task(db: &Db, task_id_prefix: &str) -> Result<Task>
 fn list_tasks(db: &Db, board_id: &str, filter: &TaskFilter) -> Result<Vec<Task>>
-
-/// What to do with tasks when their column is deleted
-enum OrphanAction {
-    MoveToFirst,  // Reassign to first column (lowest position)
-    Delete,       // Delete along with column
-}
-
-/// Filter criteria for task listing
-struct TaskFilter {
-    column_id: Option<String>,
-    priority_id: Option<String>,
-}
 ```
 
-Each shell function that accepts an ID prefix internally calls `resolve_id()` from the
-core to expand it to a full ID before proceeding.
+`init_board` seeds the four default columns (Backlog/Todo/Doing/Done) and three priorities
+(low/medium/high).
 
-### Layer 3: UX (`cli/`, `tui/`)
+**Column deletion behavior** (`remove_column`): if the column is empty, delete it. If it has
+tasks, the caller supplies an `OrphanAction`: `MoveToFirst` reassigns tasks to the column
+that will have position 0 after recomputation (appended at its end), `Delete` deletes the
+tasks then the column. After deletion, remaining column positions are recomputed gap-free.
+Deleting the last column returns `DomainError::CannotDeleteLastColumn`.
 
-User-facing frontends. They translate user intent into shell operation calls and render
-the results. They handle:
+Shell functions wrap `DomainError`/`IdError` and I/O errors in `anyhow::Error`.
 
-- Argument parsing (CLI) or keypress handling (TUI)
-- Interactive prompting for missing required fields (CLI)
-- Confirmation dialogs (CLI: y/n prompt; TUI: confirm dialog widget)
-- Output formatting (CLI: text tables; TUI: ratatui widgets)
-- Error display (CLI: stderr messages; TUI: status bar / error popup)
+Integration tests exercise operations against a temp database: init seeds defaults; add/edit/
+move/remove round-trips; short-ID resolution against real rows; the three `remove_column`
+paths (empty, MoveToFirst, Delete, last-column error).
 
-The UX layer **never** touches SQLite directly. It only calls shell operations.
+### Validation
 
-### Dependency Direction
-
-```
-UX (cli/, tui/)
-    ↓ calls
-Shell (shell/)
-    ↓ uses
-Core (core/)
+```validation
+cargo test shell:: -- --nocapture
+cargo test --test '*' -- --nocapture
+cargo clippy -- -D warnings
 ```
 
-Core has zero dependencies on shell or UX. Shell depends on core. UX depends on shell
-(and transitively on core for types).
+### Notes
 
----
+Migrations are plain SQL, one file per numbered change; the runner is idempotent (re-running
+`open` on an up-to-date DB applies nothing). At this scale SQLite reads are sub-millisecond,
+so no in-memory caching is warranted.
 
-## 4. Column Deletion Behavior
+## Checkpoint: cli
 
-When a user requests column deletion:
+Goal: Implement the clap-based CLI so every command runs end-to-end against a real database and produces the specified output, with first-run auto-init and interactive prompting for missing required args.
 
-1. Shell checks if the column has any tasks
-2. If empty: delete immediately (still confirm in UX layer)
-3. If non-empty: UX layer prompts the user to choose:
-   - **Move tasks to first column** — tasks are reassigned to the column with `position = 0`
-     (typically Backlog), appended at the end
-   - **Delete tasks** — all tasks in the column are deleted, then the column is deleted
-4. After deletion, remaining columns have their positions recomputed (gap-free)
+### Requirements
 
-The shell exposes this as `remove_column(db, id, OrphanAction)`. The UX layer is
-responsible for determining the `OrphanAction` — via interactive prompt (CLI) or
-dialog (TUI).
+The CLI (`src/cli/`) parses arguments (clap derive), prompts for missing required fields
+(`dialoguer`), formats output, and displays errors. It calls only shell operations — never
+SQLite directly.
 
-If the column being deleted IS the first column, tasks are moved to the new first column
-(the column that will have position 0 after recomputation).
+**Top-level:** `kanban [--db <path>] [-y | --yes] <subcommand>` with subcommands `init`,
+`ls` (alias for `board list`), `board`, `column`, `task`, and `tui`. Invoked with no
+subcommand, the default action is the TUI (implemented in the `tui` checkpoint; until then a
+stub is acceptable but the arg wiring must exist). The `pk`/`kanban` distinction is purely
+`argv[0]`; behavior is identical.
 
-Deleting the last column on a board is an error (`DomainError::CannotDeleteLastColumn`).
+**First run:** if the database doesn't exist on any command, create the file + parent dirs,
+run migrations, and run `init_board("Personal")`, so `kanban task add "My first task"` works
+with zero setup.
 
----
+**Interactive prompting (mixed input modes):** required args may be given as flags OR entered
+interactively when omitted; optional args (`--desc`, `--priority`) are never prompted and use
+defaults. After gathering inputs, show a confirmation summary; `--yes`/`-y` skips it. In a
+non-interactive terminal (piped stdin), a missing required arg is an error rather than a
+hang.
 
-## 5. Command Interface
+**Output** (`output.rs`): human-readable text tables by default. Errors print to stderr with
+an `error: ` prefix. Exit codes: `0` success, `1` domain error, `2` I/O error.
 
-This is the shared vocabulary. Every command maps to a shell operation.
+### Validation
 
-### Initialization
+```validation
+# Exercise the real binary against a throwaway DB; every imperative touchpoint is run and its output inspected.
+cargo build
+export KANBAN_DB="$(mktemp -d)/kanban.db"
 
-| Command        | Shell operation         | Description                                |
-|----------------|-------------------------|--------------------------------------------|
-| `kanban init`  | `init_board(name)`      | Create a new board with default columns and priorities. Auto-runs on first use if no board exists. |
+# First-run auto-init + add (non-interactive: all required args as flags, -y to skip confirm)
+cargo run -- task add "Fix login bug" --column backlog --priority high -y | tee /tmp/pk_add.out
+grep -q "Fix login bug" /tmp/pk_add.out || { echo "FAIL: add did not confirm task"; exit 1; }
 
-### Board Commands
+# board show reflects the task
+cargo run -- board show | tee /tmp/pk_show.out
+grep -q "Fix login bug" /tmp/pk_show.out || { echo "FAIL: task not on board"; exit 1; }
 
-| Command           | Shell operation              | Description                    |
-|-------------------|------------------------------|--------------------------------|
-| `board list`      | `list_boards()`              | List all boards by name. Aliased to `kanban ls`. |
-| `board rename`    | `rename_board(id, name)`     | Rename the current board.      |
-| `board show`      | `load_board_state(id)`       | Print the board as a text table (CLI) or render it (TUI). |
+# column list shows the four seeded columns
+cargo run -- column list | tee /tmp/pk_cols.out
+for c in Backlog Todo Doing Done; do
+  grep -qi "$c" /tmp/pk_cols.out || { echo "FAIL: missing column $c"; exit 1; }
+done
 
-### Column Commands
+# task list is filterable and shows the task
+cargo run -- task list --column backlog | grep -q "Fix login bug" || { echo "FAIL: task list"; exit 1; }
 
-| Command                          | Shell operation                           | Description                    |
-|----------------------------------|-------------------------------------------|--------------------------------|
-| `column add <name>`              | `add_column(board_id, name)`              | Add a new column at the end.   |
-| `column rename <id> <new-name>`  | `rename_column(id, new_name)`             | Rename a column.               |
-| `column remove <id>`             | `remove_column(id, orphan_action)`        | Delete a column (prompts for task handling). |
-| `column move <id> <position>`    | `move_column(id, position)`               | Move column to a new position. |
-| `column list`                    | `list_columns(board_id)`                  | List all columns in order.     |
+# error path: empty title -> exit 1, message on stderr
+if cargo run -- task add "" --column backlog -y 2>/tmp/pk_err.out; then
+  echo "FAIL: empty title should error"; exit 1; fi
+grep -q "title cannot be empty" /tmp/pk_err.out || { echo "FAIL: wrong error message"; exit 1; }
 
-### Task Commands
+# error path: ambiguous / not-found id -> exit 1
+if cargo run -- task show zzzzz 2>/dev/null; then echo "FAIL: bad id should error"; exit 1; fi
 
-| Command                                                            | Shell operation                                     | Description                    |
-|--------------------------------------------------------------------|-----------------------------------------------------|--------------------------------|
-| `task add <title> --column <col> [--desc <d>] [--priority <p>]`    | `add_task(col, title, desc, priority)`               | Create a task. Prompts for missing required args. |
-| `task edit <id> [--title <t>] [--desc <d>] [--priority <p>]`       | `edit_task(id, changes)`                             | Edit task fields.              |
-| `task move <id> <column> [--position <pos>]`                       | `move_task(id, column, position)`                    | Move task to another column.   |
-| `task remove <id>`                                                 | `remove_task(id)`                                    | Delete a task.                 |
-| `task show <id>`                                                   | `show_task(id)`                                      | Show task details.             |
-| `task list [--column <col>] [--priority <p>]`                      | `list_tasks(board_id, filter)`                       | List tasks, optionally filtered. |
-
-### ID Resolution in Commands
-
-All `<id>` arguments accept full IDs or short prefixes. The shell resolves them via
-`core::resolve_id()`. If ambiguous, the error message lists matching candidates with
-their full IDs and titles for disambiguation.
-
-### Column Name Resolution
-
-Columns can also be referenced by name (case-insensitive) in addition to ID prefix.
-Shell tries ID resolution first, falls back to name matching. Duplicate column names are
-disallowed, so name matching is always unambiguous.
-
----
-
-## 6. CLI Design
-
-### Argument Parsing
-
-Use `clap` with derive macros.
-
-```
-kanban [--db <path>] [-y | --yes] <subcommand>
-
-Subcommands:
-  init    Initialize a new board
-  ls      List boards (alias for `board list`)
-  board   Board operations (list, show, rename)
-  column  Column operations (add, rename, remove, move, list)
-  task    Task operations (add, edit, move, remove, show, list)
+echo "CLI e2e OK"
 ```
 
-### Interactive Prompting
+### Notes
 
-The CLI supports **mixed input modes**. Required arguments can be provided as flags OR
-entered interactively when omitted. Optional arguments are never prompted for.
+The confirmation summary and interactive prompts are for TTY use; the validation above drives
+the non-interactive path (flags + `-y`) precisely because piped stdin must not hang. If a
+command's exact stdout wording differs from these greps during implementation, update the
+greps to match the real output rather than weakening the observe-the-output requirement.
 
-Example flow for `kanban task add`:
+## Checkpoint: tui
 
-```
-$ kanban task add "Fix login bug" --column backlog
-Description: Investigate the OAuth redirect loop on mobile browsers
-Priority [low/medium/high] (medium):
-> high
+Goal: Implement the ratatui/crossterm TUI so the board renders with short-ID cards and all mode interactions (Normal/Move/Column/Insert/Edit/Confirm/Help) drive the same shell operations as the CLI.
 
-About to create task:
-  Title:       Fix login bug
-  Column:      Backlog
-  Description: Investigate the OAuth redirect loop on mobile browsers
-  Priority:    high
+### Requirements
 
-Proceed? [Y/n] y
-Created task a3x9k2 in Backlog.
-```
+The TUI (`src/tui/`) renders with `ratatui` and handles input with `crossterm`. It calls only
+shell operations. `kanban tui` (and bare `kanban`) launches it.
 
-Rules:
-- If a required argument is missing, prompt for it interactively
-- Optional arguments (`--desc`, `--priority`) are NOT prompted — they use defaults
-- After all inputs are gathered, show a confirmation summary
-- `--yes` / `-y` flag skips the confirmation prompt (for scripting)
-- In non-interactive terminals (piped stdin), missing required args are an error
+**Layout:** equal-width vertical column panes with a title bar and a bottom status bar showing
+keybindings for the current mode; columns are horizontally scrollable if they exceed terminal
+width. Each task card shows title, `[priority]`, and its short ID rendered jj-style — the
+minimum-unique prefix (from `core::min_unique_prefixes()` over visible IDs) in bold/bright,
+the remainder dimmed. The selected task is highlighted.
 
-### Output Format
+**Event loop:** synchronous, tick-based — draw, read a key, map it to an `Action`
+(`Quit` / `ShellOp` / `ModeChange` / `Navigate` / `None`), execute, and after any mutation
+reload board state fresh from SQLite (no cross-mutation in-memory caching).
 
-Default: human-readable text tables.
+**Modes:** Normal, Insert, Edit, Column, Confirm, Help.
 
-### First Run
+Normal-mode keys: `h`/`l` prev/next column, `j`/`k` prev/next task, `a` add task to focused
+column, `e` edit focused task, `m` enter move mode, `d` delete focused task (confirm),
+`H`/`L` move focused task to prev/next column, `J`/`K` move task down/up within column,
+`C` enter column mode, `?` toggle help, `q` quit.
 
-If the database doesn't exist when any command is run:
-1. Create the database file and parent directories
-2. Run migrations
-3. Run `init_board("Personal")` to create the default board
+Move mode: `h`/`l` highlight destination column, `Enter` confirm, `Esc` cancel.
+Column mode: `a` add, `r` rename, `d` delete, `h`/`l` reorder, `Esc` exit.
+Insert/Edit: `Enter` save, `Esc` cancel, `Tab` cycle fields (edit), standard text input.
 
-This means `kanban task add "My first task"` works immediately with zero setup.
+**Widgets** (`widgets/`): `board` (column layout), `card` (task card with short-ID render),
+`dialog` (confirm / edit / choice — column deletion offers Move-to-first / Delete-all /
+Cancel; task deletion is a y/N confirm), `help` (overlay listing all keybindings).
 
-### Alias
+**Task edit view:** centered overlay with Title (text), Description (multi-line text), and
+Priority (cycle available priorities).
 
-The Nix flake installs both `kanban` and `pk` binaries. `pk` is a symlink to `kanban`.
-Behavior is identical regardless of `argv[0]`.
+**Error display:** status bar at the bottom, in red, for ~3 seconds or until the next
+keypress; destructive-operation errors use a dialog popup instead.
 
-`kanban ls` is a built-in alias for `kanban board list`.
+Because the TUI needs a live terminal, its automated validation covers the pure pieces
+(input→Action mapping and short-ID/card rendering helpers) via unit tests; interactive
+behavior is verified manually per the Notes.
 
----
+**Testability:** factor input handling as a pure `handle_input(key, mode) -> Action` function
+and card/short-ID rendering as pure helpers so they can be unit-tested without a terminal.
 
-## 7. TUI Design
+### Validation
 
-### Library: ratatui + crossterm
-
-`ratatui` for rendering, `crossterm` for terminal input/event handling.
-
-### Entry Point
-
-`kanban tui` launches the TUI. If invoked as just `kanban` with no subcommand,
-the TUI is the default action.
-
-### Layout
-
-```
-┌─ Personal Kanban ─────────────────────────────────────────────────┐
-│ Backlog (2)     │ Todo (3)        │ Doing (1)       │ Done (4)    │
-│─────────────────│─────────────────│─────────────────│─────────────│
-│ ┌─────────────┐ │ ┌─────────────┐ │ ┌─────────────┐ │ ┌─────────┐│
-│ │ a3x Fix log │ │ │ m8r Write d │ │ │ qW2 API ref │ │ │ p9k Set ││
-│ │ [high]      │ │ │ [medium]    │ │ │ [high]      │ │ │ [low]   ││
-│ └─────────────┘ │ └─────────────┘ │ └─────────────┘ │ └─────────┘│
-│ ┌─────────────┐ │ ┌─────────────┐ │                 │ ┌─────────┐│
-│ │ kR7 Update  │ │ │ bQ3 Review  │ │                 │ │ nL5 Add ││
-│ │ [low]       │ │ │ [medium]    │ │                 │ │ [medium]││
-│ └─────────────┘ │ └─────────────┘ │                 │ └─────────┘│
-├───────────────────────────────────────────────────────────────────┤
-│ [h/l] column  [j/k] task  [a]dd  [e]dit  [m]ove  [d]elete  [?]  │
-└───────────────────────────────────────────────────────────────────┘
+```validation
+cargo test tui:: -- --nocapture
+cargo clippy -- -D warnings
+cargo build
 ```
 
-- Each task card shows its short ID (minimum-unique prefix in **bold**, rest dimmed)
-- Columns are equal-width vertical panes, horizontally scrollable if they exceed
-  terminal width
-- Currently selected task is highlighted
-- Status bar at bottom shows keybindings for current mode
+### Notes
 
-### ID Display in TUI
+Manual smoke test (requires a TTY, not run in CI): `KANBAN_DB=$(mktemp -d)/k.db cargo run --
+tui`, then verify hjkl navigation, `a` to add a task, `d` + confirm to delete, `C` then `a`
+to add a column, `?` for help, `q` to quit — and confirm each mutation persists by reloading.
+The `handle_input` and short-ID rendering unit tests are the enforceable gate; the smoke test
+is the human check.
 
-Task IDs are rendered with the jj-style treatment:
-- Compute `min_unique_prefixes()` across all visible task IDs
-- Render the unique prefix portion in bold/bright
-- Render the remaining characters in dim/grey
-- Example: if `a3x` is the minimum unique prefix of `a3x9k2`, display as **a3x**9k2
+## Checkpoint: packaging
 
-### Event Loop
+Goal: Finalize the Nix flake so `nix build` produces the `kanban` binary with a working `pk` alias, and the dev shell provides the full toolchain.
 
-The TUI uses a synchronous tick-based event loop:
+### Requirements
 
-```
-loop {
-    terminal.draw(|frame| render(frame, &app_state))?;
-    if let Event::Key(key) = crossterm::event::read()? {
-        let action = handle_input(key, &app_state.mode);
-        match action {
-            Action::Quit => break,
-            Action::ShellOp(op) => {
-                execute_shell_op(&db, op)?;
-                app_state.board = db.load_board_state(board_id)?;
-            }
-            Action::ModeChange(mode) => app_state.mode = mode,
-            Action::Navigate(nav) => app_state.apply_navigation(nav),
-            Action::None => {}
-        }
-    }
-}
-```
+The flake (`flake.nix`) provides a default package building the `kanban` binary (with a `pk`
+symlink) via `crane`, and a dev shell with the Rust toolchain, SQLite headers, and dev tools
+(`rust-analyzer`, `cargo-watch`). On Darwin it includes the required build inputs
+(`libiconv`, and the Security framework if needed by the toolchain).
 
-After any mutation (ShellOp), the board state is reloaded from SQLite. No in-memory
-caching of board state across mutations — always read fresh. At this scale, SQLite
-reads are sub-millisecond.
+`postInstall` creates `pk` as a symlink to `kanban` in the package output. Behavior is
+identical regardless of `argv[0]`, and `kanban ls` remains a built-in alias for
+`kanban board list`.
 
-### Modes
+### Validation
 
-| Mode     | Description                                            |
-|----------|--------------------------------------------------------|
-| Normal   | Navigate between columns and tasks. Default mode.      |
-| Insert   | Text input for creating new tasks/columns.             |
-| Edit     | Editing a task's fields (title, description, priority). |
-| Column   | Column operations (add, rename, delete, reorder).      |
-| Confirm  | Yes/no or choice confirmation for destructive actions.  |
-| Help     | Help overlay showing all keybindings.                  |
+```validation
+# Build via Nix and observe both binaries work end-to-end.
+nix build .#default -L
+test -x ./result/bin/kanban || { echo "FAIL: kanban binary missing"; exit 1; }
+test -L ./result/bin/pk || { echo "FAIL: pk is not a symlink"; exit 1; }
 
-### Keybindings — Normal Mode
-
-| Key        | Action                                        |
-|------------|-----------------------------------------------|
-| `h` / `l`  | Move focus to previous / next column          |
-| `j` / `k`  | Move focus to next / previous task in column  |
-| `a`        | Add a new task to the focused column          |
-| `e`        | Edit the focused task                         |
-| `m`        | Move the focused task (enter move mode)       |
-| `d`        | Delete the focused task (with confirmation)   |
-| `H` / `L`  | Move focused task to previous / next column   |
-| `J` / `K`  | Move focused task down / up within column     |
-| `C`        | Enter column command mode                     |
-| `?`        | Toggle help overlay                           |
-| `q`        | Quit                                          |
-
-### Keybindings — Move Mode (after `m`)
-
-| Key     | Action                                          |
-|---------|-------------------------------------------------|
-| `h`/`l` | Highlight destination column                    |
-| `Enter` | Confirm move to highlighted column              |
-| `Esc`   | Cancel                                          |
-
-### Keybindings — Column Mode (after `C`)
-
-| Key     | Action                        |
-|---------|-------------------------------|
-| `a`     | Add new column                |
-| `r`     | Rename focused column         |
-| `d`     | Delete focused column         |
-| `h`/`l` | Reorder column (move left/right) |
-| `Esc`   | Exit column mode              |
-
-### Keybindings — Insert / Edit Mode
-
-| Key     | Action                       |
-|---------|------------------------------|
-| `Enter` | Confirm / save               |
-| `Esc`   | Cancel                       |
-| `Tab`   | Cycle between fields (edit)  |
-| Standard text input keys for editing |
-
-### Task Edit View
-
-When editing a task, render a centered overlay/popup with fields:
-- Title (text input)
-- Description (text input, multi-line)
-- Priority (cycle through available priorities with Tab or arrow keys)
-
-### Confirm Dialog
-
-For destructive actions (delete task, delete column), render a dialog:
-- Show what will be affected
-- For column deletion with tasks: present "Move to [first column]" / "Delete all" / "Cancel"
-- For task deletion: "Delete [task title]? [y/N]"
-
----
-
-## 8. Error Handling
-
-### Error Flow
-
-Core functions return `DomainError` or `IdError`. Shell functions wrap these (and I/O
-errors) in `anyhow::Error`. The UX layer decides how to present them.
-
-### CLI Error Display
-
-Errors are printed to stderr with a prefix:
-
-```
-$ kanban task move a3 Done
-error: ambiguous ID prefix 'a3' matches: a3x9k2 (Fix login bug), a3bQ7f (Update deps)
-
-$ kanban column add "Todo"
-error: column 'Todo' already exists on this board
-
-$ kanban task add ""
-error: title cannot be empty
-
-$ kanban column remove backlog
-error: cannot delete the last column on a board
+export KANBAN_DB="$(mktemp -d)/kanban.db"
+./result/bin/kanban task add "packaged task" --column backlog -y | grep -q "packaged task" \
+  || { echo "FAIL: kanban binary did not create task"; exit 1; }
+./result/bin/pk board show | grep -q "packaged task" \
+  || { echo "FAIL: pk alias did not read the same board"; exit 1; }
+echo "packaging OK"
 ```
 
-Exit codes:
-- `0` — success
-- `1` — domain error (bad input, not found, etc.)
-- `2` — I/O error (database, filesystem)
+### Notes
 
-### TUI Error Display
-
-Errors are shown in a status bar at the bottom of the screen, in red, for 3 seconds
-(or until the next keypress). For destructive operation errors, use a dialog popup
-instead of the status bar.
-
-### Error Catalog
-
-| Error                    | When                                              | CLI message                                                       |
-|--------------------------|---------------------------------------------------|-------------------------------------------------------------------|
-| `EmptyTitle`             | Creating/editing task with empty title             | `error: title cannot be empty`                                    |
-| `TitleTooLong`           | Title exceeds max length                           | `error: title exceeds maximum length of {max} characters`         |
-| `EmptyColumnName`        | Creating/editing column with empty name            | `error: column name cannot be empty`                              |
-| `DuplicateColumnName`    | Column name already exists on board                | `error: column '{name}' already exists on this board`             |
-| `ColumnNotFound`         | ID/name doesn't match any column                   | `error: column not found: '{id}'`                                 |
-| `TaskNotFound`           | ID doesn't match any task                          | `error: task not found: '{id}'`                                   |
-| `BoardNotFound`          | Board ID doesn't match                             | `error: board not found: '{id}'`                                  |
-| `PriorityNotFound`       | Priority ID/name doesn't match                     | `error: priority not found: '{id}'`                               |
-| `CannotDeleteLastColumn` | Trying to delete the only column                   | `error: cannot delete the last column on a board`                 |
-| `DuplicateBoardName`     | Board name already exists                          | `error: board '{name}' already exists`                            |
-| `PositionOutOfRange`     | Position arg exceeds valid range                   | `error: position {pos} is out of range (0..{max})`               |
-| `IdNotFound`             | No ID matches prefix                               | `error: no match for ID prefix '{prefix}'`                        |
-| `IdAmbiguous`            | Multiple IDs match prefix                          | `error: ambiguous ID prefix '{prefix}' matches: {id1} ({title1}), {id2} ({title2})` |
-| `DatabaseError`          | SQLite error                                       | `error: database error: {details}`                                |
-| `MigrationError`         | Migration failed                                   | `error: migration failed: {details}`                              |
-
----
-
-## 9. Module / Crate Structure
-
-Single crate, multiple modules.
-
-```
-personal-kanban/
-├── Cargo.toml
-├── flake.nix
-├── flake.lock
-├── SPEC.md
-├── migrations/
-│   └── 001_initial_schema.sql
-└── src/
-    ├── main.rs              # Entry point: arg dispatch, first-run init
-    ├── core/
-    │   ├── mod.rs           # Re-exports
-    │   ├── types.rs         # Board, Column, Task, Priority, BoardState,
-    │   │                    #   TaskChanges, ColumnChanges, TaskFilter,
-    │   │                    #   OrphanAction, SqlParam, EntityTable
-    │   ├── validation.rs    # validate_title, validate_column_name, etc.
-    │   ├── position.rs      # next_position, recompute_positions, etc.
-    │   ├── id.rs            # resolve_id, min_unique_prefixes
-    │   ├── queries.rs       # SQL query constructors
-    │   └── error.rs         # DomainError, IdError
-    ├── shell/
-    │   ├── mod.rs           # Re-exports
-    │   ├── db.rs            # Db struct, open, migrations, load_board_state
-    │   ├── ops.rs           # Shell operations (add_task, move_task, etc.)
-    │   └── config.rs        # DB path resolution: CLI flag > env var > XDG
-    ├── cli/
-    │   ├── mod.rs           # Clap definitions, subcommand dispatch
-    │   ├── interactive.rs   # Interactive prompting for missing args
-    │   └── output.rs        # Text table formatting, error display
-    └── tui/
-        ├── mod.rs           # TUI entry point, event loop
-        ├── app.rs           # AppState: focused column, selected task, mode
-        ├── input.rs         # Keypress → Action mapping per mode
-        ├── render.rs        # Top-level frame rendering
-        └── widgets/
-            ├── mod.rs
-            ├── board.rs     # Board widget (column layout)
-            ├── card.rs      # Task card widget (with short-ID rendering)
-            ├── dialog.rs    # Confirmation / edit / choice dialogs
-            └── help.rs      # Help overlay
-```
-
-### Why a single crate?
-
-At this scale, a workspace adds ceremony without benefit. The module boundary enforces
-the architectural constraint: `core/` has no `use` of anything from `shell/`, `cli/`, or
-`tui/`. If the project grows (e.g., adding a REST API crate), extract `core/` into a
-workspace member then.
-
----
-
-## 10. Nix Flake
-
-### What the flake provides
-
-- A default package: the `kanban` binary (and `pk` symlink)
-- A dev shell with Rust toolchain, SQLite headers, and development tools
-
-### flake.nix outline
-
-```nix
-{
-  description = "Personal kanban board — CLI and TUI";
-
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    rust-overlay.url = "github:oxalica/rust-overlay";
-    flake-utils.url = "github:numtide/flake-utils";
-    crane.url = "github:ipetkov/crane";
-  };
-
-  outputs = { self, nixpkgs, rust-overlay, flake-utils, crane, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ rust-overlay.overlays.default ];
-        };
-        craneLib = crane.mkLib pkgs;
-
-        kanban = craneLib.buildPackage {
-          src = craneLib.cleanCargoSource ./.;
-          buildInputs = [ ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
-            pkgs.darwin.apple_sdk.frameworks.Security
-            pkgs.libiconv
-          ];
-          postInstall = ''
-            ln -s $out/bin/kanban $out/bin/pk
-          '';
-        };
-      in {
-        packages.default = kanban;
-        apps.default = flake-utils.lib.mkApp { drv = kanban; };
-
-        devShells.default = craneLib.devShell {
-          packages = with pkgs; [
-            rust-analyzer
-            cargo-watch
-          ];
-        };
-      }
-    );
-}
-```
-
----
-
-## 11. Dependencies
-
-| Crate        | Purpose                                | Notes                                           |
-|--------------|----------------------------------------|-------------------------------------------------|
-| `clap`       | CLI argument parsing                   | Derive macros, subcommand support               |
-| `ratatui`    | TUI rendering                          | Successor to `tui-rs`, actively maintained      |
-| `crossterm`  | Terminal backend for ratatui           | Cross-platform, pure Rust                       |
-| `rusqlite`   | SQLite bindings                        | `bundled` feature compiles SQLite in             |
-| `nanoid`     | ID generation                          | Short, URL-safe random IDs                      |
-| `serde`      | Serialization                          | For types that need serialization                |
-| `chrono`     | Timestamp handling                     | DateTime types                                  |
-| `dirs`       | XDG directory resolution               | Cross-platform                                  |
-| `anyhow`     | Error handling in shell/UX layers      | Ergonomic error chaining for I/O code           |
-| `thiserror`  | Error handling in core layer           | Derive macro for domain error enums             |
-| `dialoguer`  | Interactive CLI prompts                | Input, confirm, select prompts                  |
-
----
-
-## 12. Explicitly Out of Scope (MVP)
-
-| Feature                  | Why excluded                                               |
-|--------------------------|------------------------------------------------------------|
-| REST API                 | Future UX layer — same shell operations, different I/O     |
-| Multi-machine sync       | Requires network protocol design; SQLite file is portable  |
-| Backup to home lab       | Simple file copy works today; automated backup is later    |
-| Multiple boards (UI)     | Core models boards as instances; multi-board UX deferred   |
-| Epics / parent tasks     | Personal kanban doesn't need hierarchy                     |
-| Calendar view            | Not needed                                                 |
-| Sprints                  | Not needed                                                 |
-| Due dates                | Could be added as a task field later                       |
-| Assignees                | Single user tool                                           |
-| Comments on tasks        | Description field suffices                                 |
-| Undo/redo                | Could be added via command history later                   |
-| Task search / filter     | Stretch goal for TUI, not MVP                              |
-| Custom themes            | ratatui supports it; not worth the config surface now      |
-| `--json` output          | Can be a fast follow                                       |
-| Custom priorities        | Table exists, but MVP only seeds low/medium/high           |
-
----
-
-## 13. Implementation Order
-
-Suggested build sequence for a coding agent:
-
-1. **Project scaffolding** — `Cargo.toml`, `flake.nix`, directory structure, empty modules
-2. **Core types** — `Board`, `Column`, `Task`, `Priority`, `BoardState`, `TaskChanges`,
-   `ColumnChanges`, `DomainError`, `IdError`
-3. **Core functions** — validation, position computation, ID resolution, SQL query
-   constructors. Unit tests for all.
-4. **Migrations** — `001_initial_schema.sql`, migration runner in `shell/db.rs`
-5. **Shell operations** — `Db` struct, `load_board_state`, all mutation operations
-6. **CLI** — clap definitions, interactive prompting (`dialoguer`), output formatting,
-   first-run auto-init
-7. **Integration tests** — CLI commands against a temp database
-8. **TUI: rendering** — board layout, column panes, task cards with short-ID display
-9. **TUI: navigation** — Normal mode (hjkl), mode transitions
-10. **TUI: mutations** — Add/edit/move/delete via dialogs, column operations
-11. **TUI: polish** — Help overlay, confirmation dialogs, error display, status bar
-12. **Nix flake** — Finalize, test `nix build`, verify `pk` symlink
+`nix build` compiles the SQLite amalgamation via the `bundled` rusqlite feature, so no system
+SQLite is required at runtime. If `nix` is unavailable in the execution environment, the
+equivalent fallback is `cargo build --release` plus a manual `ln -s kanban pk`, but the
+flake build is the authoritative gate.
