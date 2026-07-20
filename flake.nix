@@ -8,7 +8,7 @@
     crane.url = "github:ipetkov/crane";
   };
 
-  outputs = {
+  outputs = inputs @ {
     self,
     nixpkgs,
     rust-overlay,
@@ -16,7 +16,7 @@
     crane,
     ...
   }:
-    flake-utils.lib.eachDefaultSystem (system: let
+    (flake-utils.lib.eachDefaultSystem (system: let
       overlays = [(import rust-overlay)];
       pkgs = import nixpkgs {
         inherit system overlays;
@@ -76,5 +76,30 @@
       };
 
       formatter = pkgs.alejandra;
-    });
+    }))
+    // {
+      # NixOS module — import into a system config and set `programs.kanban.enable = true;`
+      nixosModules.default = {
+        config,
+        lib,
+        pkgs,
+        ...
+      }: let
+        cfg = config.programs.kanban;
+        system = pkgs.stdenv.hostPlatform.system;
+      in {
+        options.programs.kanban = {
+          enable = lib.mkEnableOption "kanban - a personal kanban board CLI and TUI";
+          package = lib.mkOption {
+            type = lib.types.package;
+            default = self.packages.${system}.default;
+            description = "Which kanban build to install (provides `kanban` and the `pk` alias).";
+          };
+        };
+
+        config = lib.mkIf cfg.enable {
+          environment.systemPackages = [cfg.package];
+        };
+      };
+    };
 }
