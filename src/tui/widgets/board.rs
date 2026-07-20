@@ -44,8 +44,8 @@ fn render_title_bar(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
     let text = format!(" {} ", board_name);
     let paragraph = Paragraph::new(Text::from(text)).style(
         Style::default()
-            .fg(Color::White)
-            .bg(Color::Blue)
+            .fg(Color::Magenta)
+            .bg(Color::Reset)
             .add_modifier(Modifier::BOLD),
     );
     frame.render_widget(paragraph, area);
