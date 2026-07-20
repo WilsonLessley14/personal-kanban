@@ -3,7 +3,7 @@
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, BorderType, Paragraph, Wrap};
 
 use crate::tui::app::{ConfirmContext, App};
 
@@ -20,6 +20,7 @@ pub fn render_insert_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &A
 
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .title(" New Task Title ");
 
     let inner = block.inner(popup_area);
@@ -37,14 +38,14 @@ pub fn render_insert_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &A
         Line::raw(""),
     ];
 
-    let paragraph = Paragraph::new(Text::from(lines));
+    let paragraph = Paragraph::new(Text::from(lines)).wrap( Wrap {trim: true});
     frame.render_widget(paragraph, inner);
 }
 
 /// Render the edit task popup overlay with field cycling.
 pub fn render_edit_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
     let overlay_width = 50u16.min(area.width.saturating_sub(2));
-    let overlay_height = 8u16.min(area.height.saturating_sub(2));
+    let overlay_height = 12u16.min(area.height.saturating_sub(2));
     let popup_area = Rect {
         x: (area.width - overlay_width) / 2,
         y: (area.height - overlay_height) / 2,
@@ -52,7 +53,10 @@ pub fn render_edit_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App
         height: overlay_height,
     };
 
-    let block = Block::default().borders(Borders::ALL).title(" Edit Task ");
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(" Edit Task ");
 
     let task = match &app.editing_task {
         Some(t) => t,
@@ -83,7 +87,7 @@ pub fn render_edit_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App
 
     // Title
     let title_label = if app.edit_field == 0 {
-        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)
     } else {
         Style::default()
     };
@@ -99,7 +103,7 @@ pub fn render_edit_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App
 
     // Description
     let desc_label = if app.edit_field == 1 {
-        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)
     } else {
         Style::default()
     };
@@ -115,7 +119,7 @@ pub fn render_edit_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App
 
     // Priority
     let prio_label = if app.edit_field == 2 {
-        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)
     } else {
         Style::default()
     };
@@ -131,11 +135,8 @@ pub fn render_edit_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App
         ),
     ]));
 
-    lines.push(Line::raw(""));
-    lines.push(Line::raw("  Enter save | Esc cancel | Tab cycle | p priority"));
-    lines.push(Line::raw(""));
 
-    let paragraph = Paragraph::new(Text::from(lines));
+    let paragraph = Paragraph::new(Text::from(lines)).wrap( Wrap { trim: true});
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
     frame.render_widget(paragraph, inner);

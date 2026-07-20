@@ -60,7 +60,7 @@ fn render_status_bar(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
             Mode::Move => "MOVE MODE — h/l target col | Enter confirm | Esc cancel".to_string(),
             Mode::Column => "COLUMN MODE — a add | r rename | d delete | h/l reorder | Esc exit".to_string(),
             Mode::Insert => "INSERT — Enter save | Esc cancel".to_string(),
-            Mode::Edit => "EDIT — Enter save | Esc cancel | Tab cycle field".to_string(),
+            Mode::Edit => "EDIT — Enter save | Esc cancel | Tab cycle field | p cycle priority".to_string(),
             Mode::Confirm => "CONFIRM — y/N".to_string(),
             Mode::Help => "?/Esc/q close".to_string(),
         }
