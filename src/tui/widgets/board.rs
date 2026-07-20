@@ -157,7 +157,7 @@ pub fn render_column_panels(frame: &mut ratatui::Frame<'_>, area: Rect, app: &Ap
             continue;
         }
 
-        let card_height: u16 = 2;
+        let card_height: u16 = 5;
         let available_height = inner.height as usize;
         let card_height_usize = card_height as usize;
         let max_visible = available_height.saturating_sub(1) / card_height_usize;
