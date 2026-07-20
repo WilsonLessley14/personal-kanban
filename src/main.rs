@@ -1,11 +1,14 @@
-fn main() {
-    println!("Hello from personal-kanban");
+#[cfg(unix)]
+fn setup_sigpipe() {
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_builds_and_tests() {
-        assert_eq!(2 + 2, 4);
-    }
+#[cfg(not(unix))]
+fn setup_sigpipe() {}
+
+fn main() {
+    setup_sigpipe();
+    personal_kanban::cli::run_with_exit();
 }

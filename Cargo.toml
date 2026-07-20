@@ -3,6 +3,27 @@ name = "personal-kanban"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "personal_kanban"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kanban"
+path = "src/main.rs"
+
 [dependencies]
+thiserror = "2"
+anyhow = "1"
+nanoid = "0.5"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5"
+rusqlite = { version = "0.32", features = ["bundled"] }
+clap = { version = "4", features = ["derive"] }
+dialoguer = "0.11"
+ratatui = "0.29"
+crossterm = "0.28"
+atty = "0.2"
+libc = "0.2"
 
 [dev-dependencies]
+tempfile = "3"
