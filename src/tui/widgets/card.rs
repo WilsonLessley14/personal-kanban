@@ -3,7 +3,7 @@
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Paragraph, BorderType, Block, Wrap};
+use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
 
 use crate::tui::app::App;
 use crate::tui::render::{get_min_prefix_lengths, render_task_id_spans};
@@ -17,8 +17,7 @@ pub fn render_task_card(
     area: Rect,
 ) {
     let card_style = if is_selected {
-        Style::default()
-            .fg(Color::Magenta)
+        Style::default().fg(Color::Magenta)
     } else {
         Style::default()
     };
@@ -53,16 +52,18 @@ pub fn render_task_card(
             .iter()
             .map(|s| Span::styled(s.content.clone(), s.style))
             .collect::<Vec<_>>(),
-    ).right_aligned();
+    )
+    .right_aligned();
 
     let text = Text::from(vec![title_line]);
     let card = Paragraph::new(text)
-        .block(Block::bordered()
+        .block(
+            Block::bordered()
                 .title(Span::styled(format!("[{}]", prio_name), card_style))
                 .border_type(BorderType::Rounded)
                 .border_style(border_style)
-                .title_bottom(id_line)
+                .title_bottom(id_line),
         )
-        .wrap(Wrap {trim: true});
+        .wrap(Wrap { trim: true });
     frame.render_widget(card, area);
 }

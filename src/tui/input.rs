@@ -5,11 +5,7 @@ use super::app::{Action, ConfirmContext, Mode};
 /// Map a key event and current mode to an Action.
 ///
 /// This is a pure function — no I/O — so it can be unit-tested directly.
-pub fn handle_input(
-    key: KeyEvent,
-    mode: Mode,
-    confirm_context: Option<ConfirmContext>,
-) -> Action {
+pub fn handle_input(key: KeyEvent, mode: Mode, confirm_context: Option<ConfirmContext>) -> Action {
     // Only handle key press (not release/repeat)
     if key.kind != KeyEventKind::Press {
         return Action::None;
@@ -20,10 +16,7 @@ pub fn handle_input(
         Mode::Insert => handle_insert(key),
         Mode::Edit => handle_edit(key),
         Mode::Column => handle_column_mode(key),
-        Mode::Confirm => handle_confirm(
-            key,
-            confirm_context.unwrap_or(ConfirmContext::TaskDelete),
-        ),
+        Mode::Confirm => handle_confirm(key, confirm_context.unwrap_or(ConfirmContext::TaskDelete)),
         Mode::Help => handle_help(key),
         Mode::Move => handle_move_mode(key),
     }
@@ -91,17 +84,17 @@ fn handle_confirm(key: KeyEvent, context: ConfirmContext) -> Action {
     match context {
         ConfirmContext::TaskDelete => match key.code {
             event::KeyCode::Char('y') | event::KeyCode::Char('Y') => Action::ConfirmYes,
-            event::KeyCode::Char('n')
-            | event::KeyCode::Char('N')
-            | event::KeyCode::Esc => Action::ConfirmNo,
+            event::KeyCode::Char('n') | event::KeyCode::Char('N') | event::KeyCode::Esc => {
+                Action::ConfirmNo
+            }
             _ => Action::None,
         },
         ConfirmContext::ColumnDelete => match key.code {
             event::KeyCode::Char('m') | event::KeyCode::Char('M') => Action::ConfirmMoveToFirst,
             event::KeyCode::Char('d') | event::KeyCode::Char('D') => Action::ConfirmDeleteAll,
-            event::KeyCode::Char('n')
-            | event::KeyCode::Char('N')
-            | event::KeyCode::Esc => Action::ConfirmNo,
+            event::KeyCode::Char('n') | event::KeyCode::Char('N') | event::KeyCode::Esc => {
+                Action::ConfirmNo
+            }
             _ => Action::None,
         },
     }
@@ -218,12 +211,18 @@ mod tests {
 
     #[test]
     fn normal_enter_move_mode() {
-        assert_eq!(handle_input(key('m'), Mode::Normal, None), Action::EnterMoveMode);
+        assert_eq!(
+            handle_input(key('m'), Mode::Normal, None),
+            Action::EnterMoveMode
+        );
     }
 
     #[test]
     fn normal_delete_task() {
-        assert_eq!(handle_input(key('d'), Mode::Normal, None), Action::DeleteTask);
+        assert_eq!(
+            handle_input(key('d'), Mode::Normal, None),
+            Action::DeleteTask
+        );
     }
 
     #[test]
@@ -244,12 +243,18 @@ mod tests {
 
     #[test]
     fn normal_move_task_down() {
-        assert_eq!(handle_input(key('J'), Mode::Normal, None), Action::MoveTaskDown);
+        assert_eq!(
+            handle_input(key('J'), Mode::Normal, None),
+            Action::MoveTaskDown
+        );
     }
 
     #[test]
     fn normal_move_task_up() {
-        assert_eq!(handle_input(key('K'), Mode::Normal, None), Action::MoveTaskUp);
+        assert_eq!(
+            handle_input(key('K'), Mode::Normal, None),
+            Action::MoveTaskUp
+        );
     }
 
     #[test]
@@ -262,7 +267,10 @@ mod tests {
 
     #[test]
     fn normal_toggle_help() {
-        assert_eq!(handle_input(key('?'), Mode::Normal, None), Action::ToggleHelp);
+        assert_eq!(
+            handle_input(key('?'), Mode::Normal, None),
+            Action::ToggleHelp
+        );
     }
 
     #[test]
@@ -334,22 +342,34 @@ mod tests {
 
     #[test]
     fn column_add() {
-        assert_eq!(handle_input(key('a'), Mode::Column, None), Action::ColumnAdd);
+        assert_eq!(
+            handle_input(key('a'), Mode::Column, None),
+            Action::ColumnAdd
+        );
     }
 
     #[test]
     fn column_rename() {
-        assert_eq!(handle_input(key('r'), Mode::Column, None), Action::ColumnRename);
+        assert_eq!(
+            handle_input(key('r'), Mode::Column, None),
+            Action::ColumnRename
+        );
     }
 
     #[test]
     fn column_delete() {
-        assert_eq!(handle_input(key('d'), Mode::Column, None), Action::ColumnDelete);
+        assert_eq!(
+            handle_input(key('d'), Mode::Column, None),
+            Action::ColumnDelete
+        );
     }
 
     #[test]
     fn column_move_left() {
-        assert_eq!(handle_input(key('h'), Mode::Column, None), Action::ColumnMoveLeft);
+        assert_eq!(
+            handle_input(key('h'), Mode::Column, None),
+            Action::ColumnMoveLeft
+        );
     }
 
     #[test]
@@ -373,19 +393,11 @@ mod tests {
     #[test]
     fn confirm_task_yes() {
         assert_eq!(
-            handle_input(
-                key('y'),
-                Mode::Confirm,
-                Some(ConfirmContext::TaskDelete)
-            ),
+            handle_input(key('y'), Mode::Confirm, Some(ConfirmContext::TaskDelete)),
             Action::ConfirmYes
         );
         assert_eq!(
-            handle_input(
-                key('Y'),
-                Mode::Confirm,
-                Some(ConfirmContext::TaskDelete)
-            ),
+            handle_input(key('Y'), Mode::Confirm, Some(ConfirmContext::TaskDelete)),
             Action::ConfirmYes
         );
     }
@@ -393,19 +405,11 @@ mod tests {
     #[test]
     fn confirm_task_no() {
         assert_eq!(
-            handle_input(
-                key('n'),
-                Mode::Confirm,
-                Some(ConfirmContext::TaskDelete)
-            ),
+            handle_input(key('n'), Mode::Confirm, Some(ConfirmContext::TaskDelete)),
             Action::ConfirmNo
         );
         assert_eq!(
-            handle_input(
-                key('N'),
-                Mode::Confirm,
-                Some(ConfirmContext::TaskDelete)
-            ),
+            handle_input(key('N'), Mode::Confirm, Some(ConfirmContext::TaskDelete)),
             Action::ConfirmNo
         );
         assert_eq!(
@@ -423,11 +427,7 @@ mod tests {
     #[test]
     fn confirm_column_move_to_first() {
         assert_eq!(
-            handle_input(
-                key('m'),
-                Mode::Confirm,
-                Some(ConfirmContext::ColumnDelete)
-            ),
+            handle_input(key('m'), Mode::Confirm, Some(ConfirmContext::ColumnDelete)),
             Action::ConfirmMoveToFirst
         );
     }
@@ -435,11 +435,7 @@ mod tests {
     #[test]
     fn confirm_column_delete_all() {
         assert_eq!(
-            handle_input(
-                key('d'),
-                Mode::Confirm,
-                Some(ConfirmContext::ColumnDelete)
-            ),
+            handle_input(key('d'), Mode::Confirm, Some(ConfirmContext::ColumnDelete)),
             Action::ConfirmDeleteAll
         );
     }
@@ -447,11 +443,7 @@ mod tests {
     #[test]
     fn confirm_column_cancel() {
         assert_eq!(
-            handle_input(
-                key('n'),
-                Mode::Confirm,
-                Some(ConfirmContext::ColumnDelete)
-            ),
+            handle_input(key('n'), Mode::Confirm, Some(ConfirmContext::ColumnDelete)),
             Action::ConfirmNo
         );
         assert_eq!(
@@ -521,9 +513,6 @@ mod tests {
     fn key_release_ignored() {
         let mut release_key = key('q');
         release_key.kind = KeyEventKind::Release;
-        assert_eq!(
-            handle_input(release_key, Mode::Normal, None),
-            Action::None
-        );
+        assert_eq!(handle_input(release_key, Mode::Normal, None), Action::None);
     }
 }

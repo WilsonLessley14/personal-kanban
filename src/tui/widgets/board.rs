@@ -3,7 +3,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Span, Text};
-use ratatui::widgets::{Block, Borders, BorderType, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 
 use crate::core::Task;
 use crate::tui::app::{App, Mode};
@@ -18,7 +18,11 @@ pub fn render_board(frame: &mut ratatui::Frame<'_>, app: &mut App) {
 
     let vertical = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Fill(1), Constraint::Length(1)])
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Fill(1),
+            Constraint::Length(1),
+        ])
         .split(area);
 
     render_title_bar(frame, vertical[0], app);
@@ -111,8 +115,9 @@ pub fn render_column_panels(frame: &mut ratatui::Frame<'_>, area: Rect, app: &Ap
             .collect();
 
         let is_focused_col = col_idx == app.focused_col_idx;
-        let is_move_target =
-            app.mode == Mode::Move && col_idx == app.move_target_col_idx && col_idx != app.focused_col_idx;
+        let is_move_target = app.mode == Mode::Move
+            && col_idx == app.move_target_col_idx
+            && col_idx != app.focused_col_idx;
 
         let col_block_style = if is_move_target {
             Style::default()
@@ -127,11 +132,9 @@ pub fn render_column_panels(frame: &mut ratatui::Frame<'_>, area: Rect, app: &Ap
         } else {
             Style::default().fg(Color::Gray).bg(Color::Reset)
         };
-        
+
         let col_border_style = if is_move_target {
-            Style::default()
-                .fg(Color::Yellow)
-                .bg(Color::Reset)
+            Style::default().fg(Color::Yellow).bg(Color::Reset)
         } else if is_focused_col {
             Style::default()
                 .fg(Color::Magenta)

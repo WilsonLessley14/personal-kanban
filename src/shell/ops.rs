@@ -534,16 +534,15 @@ pub fn reorder_task(db: &Db, task_id: &str, direction: OrderDirection) -> Result
 
     let current_pos = task.position;
     let adjacent = match direction {
-        OrderDirection::Up => {
-            col_tasks.iter().find(|t| t.position < current_pos).map(|t| t.position)
-        }
-        OrderDirection::Down => {
-            col_tasks
-                .iter()
-                .filter(|t| t.position > current_pos)
-                .min_by_key(|t| t.position)
-                .map(|t| t.position)
-        }
+        OrderDirection::Up => col_tasks
+            .iter()
+            .find(|t| t.position < current_pos)
+            .map(|t| t.position),
+        OrderDirection::Down => col_tasks
+            .iter()
+            .filter(|t| t.position > current_pos)
+            .min_by_key(|t| t.position)
+            .map(|t| t.position),
     };
 
     let adjacent_pos = adjacent.ok_or_else(|| anyhow!("already at {direction}"))?;
@@ -558,16 +557,10 @@ pub fn reorder_task(db: &Db, task_id: &str, direction: OrderDirection) -> Result
 
     // Swap positions
     let sql = "UPDATE task SET position = ?1, updated_at = ?2 WHERE id = ?3";
-    tx.execute(
-        sql,
-        rusqlite::params![current_pos, &now, adjacent_task.id],
-    )
-    .context("swap fail")?;
-    tx.execute(
-        sql,
-        rusqlite::params![adjacent_pos, &now, task_id],
-    )
-    .context("swap fail")?;
+    tx.execute(sql, rusqlite::params![current_pos, &now, adjacent_task.id])
+        .context("swap fail")?;
+    tx.execute(sql, rusqlite::params![adjacent_pos, &now, task_id])
+        .context("swap fail")?;
 
     tx.commit().context("commit fail")?;
     Ok(())

@@ -17,7 +17,7 @@ use ratatui::Terminal;
 
 use crate::core::{OrphanAction, TaskChanges};
 use crate::shell;
-use crate::tui::app::{Action, ConfirmContext, App, Mode};
+use crate::tui::app::{Action, App, ConfirmContext, Mode};
 use crate::tui::input::handle_input;
 use crate::tui::widgets::render_board;
 
@@ -145,8 +145,11 @@ fn ensure_board(db: &shell::Db) -> Result<()> {
 /// Load the current board state from SQLite.
 fn load_state(db: &shell::Db) -> Result<crate::core::BoardState> {
     let boards = shell::list_boards(db)?;
-    let board = boards.first().ok_or_else(|| anyhow::anyhow!("no boards found"))?;
-    db.load_board_state(&board.id).context("failed to load board state")
+    let board = boards
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("no boards found"))?;
+    db.load_board_state(&board.id)
+        .context("failed to load board state")
 }
 
 /// Execute an action, returning (should_reload_state, should_quit).
@@ -161,8 +164,10 @@ fn execute_action(app: &mut App, db: &shell::Db, action: Action) -> Result<(bool
         Action::NavigatePrevColumn => {
             if let Some(ref state) = app.state {
                 if !state.columns.is_empty() {
-                    app.focused_col_idx =
-                        app.focused_col_idx.saturating_sub(1).min(state.columns.len() - 1);
+                    app.focused_col_idx = app
+                        .focused_col_idx
+                        .saturating_sub(1)
+                        .min(state.columns.len() - 1);
                     app.focused_task_idx = 0;
                 }
             }
@@ -703,11 +708,8 @@ fn execute_action(app: &mut App, db: &shell::Db, action: Action) -> Result<(bool
                         .find(|p| p.id == task.priority_id)
                         .map(|p| p.name.as_str())
                         .unwrap_or("medium");
-                    let priorities: Vec<&str> = state
-                        .priorities
-                        .iter()
-                        .map(|p| p.name.as_str())
-                        .collect();
+                    let priorities: Vec<&str> =
+                        state.priorities.iter().map(|p| p.name.as_str()).collect();
                     if let Some(idx) = priorities.iter().position(|p| *p == current_priority_name) {
                         let next_idx = (idx + 1) % priorities.len();
                         let next_priority_name = priorities[next_idx];

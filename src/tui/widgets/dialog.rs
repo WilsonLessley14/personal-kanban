@@ -3,9 +3,9 @@
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, BorderType, Paragraph, Wrap};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Wrap};
 
-use crate::tui::app::{ConfirmContext, App};
+use crate::tui::app::{App, ConfirmContext};
 
 /// Render the insert task popup overlay.
 pub fn render_insert_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
@@ -38,7 +38,7 @@ pub fn render_insert_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &A
         Line::raw(""),
     ];
 
-    let paragraph = Paragraph::new(Text::from(lines)).wrap( Wrap {trim: true});
+    let paragraph = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: true });
     frame.render_widget(paragraph, inner);
 }
 
@@ -87,7 +87,9 @@ pub fn render_edit_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App
 
     // Title
     let title_label = if app.edit_field == 0 {
-        Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default()
     };
@@ -98,12 +100,18 @@ pub fn render_edit_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App
         } else {
             &task.title
         }),
-        if app.edit_field == 0 { Span::raw("█") } else { Span::raw("") },
+        if app.edit_field == 0 {
+            Span::raw("█")
+        } else {
+            Span::raw("")
+        },
     ]));
 
     // Description
     let desc_label = if app.edit_field == 1 {
-        Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default()
     };
@@ -114,12 +122,18 @@ pub fn render_edit_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App
         } else {
             &task.description
         }),
-        if app.edit_field == 1 { Span::raw("█") } else { Span::raw("") },
+        if app.edit_field == 1 {
+            Span::raw("█")
+        } else {
+            Span::raw("")
+        },
     ]));
 
     // Priority
     let prio_label = if app.edit_field == 2 {
-        Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default()
     };
@@ -135,8 +149,7 @@ pub fn render_edit_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App
         ),
     ]));
 
-
-    let paragraph = Paragraph::new(Text::from(lines)).wrap( Wrap { trim: true});
+    let paragraph = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: true });
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
     frame.render_widget(paragraph, inner);
