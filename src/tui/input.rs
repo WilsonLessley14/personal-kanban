@@ -33,6 +33,7 @@ fn handle_normal(key: KeyEvent) -> Action {
     match (key.modifiers, key.code) {
         // Navigation
         (_, event::KeyCode::Char('q')) => Action::Quit,
+        (_, event::KeyCode::Esc) => Action::Quit,
         (_, event::KeyCode::Char('h')) => Action::NavigatePrevColumn,
         (_, event::KeyCode::Char('l')) => Action::NavigateNextColumn,
         (_, event::KeyCode::Char('j')) => Action::NavigateNextTask,
@@ -48,8 +49,6 @@ fn handle_normal(key: KeyEvent) -> Action {
         (_, event::KeyCode::Char('K')) => Action::MoveTaskUp,
         (_, event::KeyCode::Char('C')) => Action::EnterColumnMode,
         (_, event::KeyCode::Char('?')) => Action::ToggleHelp,
-        // Also allow Esc to toggle help
-        (_, event::KeyCode::Esc) => Action::ToggleHelp,
         _ => Action::None,
     }
 }
@@ -169,6 +168,10 @@ mod tests {
     #[test]
     fn normal_quit() {
         assert_eq!(handle_input(key('q'), Mode::Normal, None), Action::Quit);
+        assert_eq!(
+            handle_input(key_code(KeyCode::Esc), Mode::Normal, None),
+            Action::Quit
+        );
     }
 
     #[test]
@@ -260,10 +263,6 @@ mod tests {
     #[test]
     fn normal_toggle_help() {
         assert_eq!(handle_input(key('?'), Mode::Normal, None), Action::ToggleHelp);
-        assert_eq!(
-            handle_input(key_code(KeyCode::Esc), Mode::Normal, None),
-            Action::ToggleHelp
-        );
     }
 
     #[test]
