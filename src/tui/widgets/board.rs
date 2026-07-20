@@ -3,7 +3,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Span, Text};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, BorderType, Paragraph};
 
 use crate::core::Task;
 use crate::tui::app::{App, Mode};
@@ -117,12 +117,25 @@ pub fn render_column_panels(frame: &mut ratatui::Frame<'_>, area: Rect, app: &Ap
         let col_block_style = if is_move_target {
             Style::default()
                 .fg(Color::Yellow)
-                .bg(Color::DarkGray)
+                .bg(Color::Reset)
                 .add_modifier(Modifier::BOLD)
         } else if is_focused_col {
             Style::default()
                 .fg(Color::White)
-                .bg(Color::DarkGray)
+                .bg(Color::Reset)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Gray).bg(Color::Reset)
+        };
+        
+        let col_border_style = if is_move_target {
+            Style::default()
+                .fg(Color::Yellow)
+                .bg(Color::Reset)
+        } else if is_focused_col {
+            Style::default()
+                .fg(Color::Magenta)
+                .bg(Color::Reset)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Gray).bg(Color::Reset)
@@ -131,7 +144,9 @@ pub fn render_column_panels(frame: &mut ratatui::Frame<'_>, area: Rect, app: &Ap
         let block = Block::default()
             .borders(Borders::ALL)
             .title(Span::raw(&col.name))
-            .style(col_block_style);
+            .style(col_block_style)
+            .border_type(BorderType::Rounded)
+            .border_style(col_border_style);
         frame.render_widget(&block, *col_area);
 
         let inner = block.inner(*col_area);
