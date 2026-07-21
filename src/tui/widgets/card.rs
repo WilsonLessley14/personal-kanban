@@ -20,6 +20,7 @@ pub fn render_task_card(
         Style::default().fg(Color::Magenta)
     } else {
         Style::default()
+            .remove_modifier(Modifier::BOLD)
     };
 
     let border_style = if is_selected {
@@ -28,6 +29,7 @@ pub fn render_task_card(
             .fg(Color::Magenta)
     } else {
         Style::default()
+            .remove_modifier(Modifier::BOLD)
     };
 
     let prio_name = app
