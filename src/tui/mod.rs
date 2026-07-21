@@ -197,9 +197,19 @@ fn execute_action(app: &mut App, db: &shell::Db, action: Action) -> Result<(bool
             Ok((false, false))
         }
         Action::AddTask => {
-            // Enter insert mode with empty buffer
-            app.mode = Mode::Insert;
+            app.editing_task = Some(crate::core::Task {
+                id: String::new(),
+                column_id: String::new(),
+                title: String::new(),
+                description: String::new(),
+                priority_id: String::new(),
+                position: 0,
+                created_at: String::new(),
+                updated_at: String::new(),
+            });
+            app.edit_field = 0;
             app.input_buffer.clear();
+            app.mode = Mode::Edit;
             Ok((false, false))
         }
         Action::EditTask => {
@@ -618,39 +628,84 @@ fn execute_action(app: &mut App, db: &shell::Db, action: Action) -> Result<(bool
                         return Ok((false, false));
                     }
 
-                    // Diff editing_task against the original in board state
-                    let original = app
-                        .state
-                        .as_ref()
-                        .and_then(|s| s.tasks.iter().find(|t| t.id == task.id));
-                    let mut changes = TaskChanges::default();
-                    if let Some(orig) = original {
-                        if task.title != orig.title {
-                            changes.title = Some(task.title.clone());
+                    // New task creation (id is empty)
+                    if task.id.is_empty() {
+                        if let Some(ref state) = app.state {
+                            let col = state
+                                .columns
+                                .get(app.focused_col_idx)
+                                .ok_or_else(|| anyhow::anyhow!("no focused column"))?;
+                            // Resolve priority: use task's priority_id if set, else default to "medium"
+                            let priority_id = if task.priority_id.is_empty() {
+                                state
+                                    .priorities
+                                    .iter()
+                                    .find(|p| p.name == "medium")
+                                    .map(|p| p.id.clone())
+                                    .unwrap_or_default()
+                            } else {
+                                task.priority_id.clone()
+                            };
+                            // Look up priority name
+                            let priority_name = state
+                                .priorities
+                                .iter()
+                                .find(|p| p.id == priority_id)
+                                .map(|p| p.name.as_str())
+                                .unwrap_or("medium");
+                            let description = task.description.clone();
+                            match shell::add_task(db, &col.name, &title, &description, priority_name) {
+                                Ok(_) => {
+                                    app.mode = Mode::Normal;
+                                    app.editing_task = None;
+                                    app.input_buffer.clear();
+                                    Ok((true, false))
+                                }
+                                Err(e) => {
+                                    app.set_error(e.to_string());
+                                    Ok((false, false))
+                                }
+                            }
+                        } else {
+                            app.set_error("No board state".into());
+                            Ok((false, false))
                         }
-                        if task.description != orig.description {
-                            changes.description = Some(task.description.clone());
+                    } else {
+                        // Edit existing task
+                        // Diff editing_task against the original in board state
+                        let original = app
+                            .state
+                            .as_ref()
+                            .and_then(|s| s.tasks.iter().find(|t| t.id == task.id));
+                        let mut changes = TaskChanges::default();
+                        if let Some(orig) = original {
+                            if task.title != orig.title {
+                                changes.title = Some(task.title.clone());
+                            }
+                            if task.description != orig.description {
+                                changes.description = Some(task.description.clone());
+                            }
+                            if task.priority_id != orig.priority_id {
+                                changes.priority_id = Some(task.priority_id.clone());
+                            }
                         }
-                        if task.priority_id != orig.priority_id {
-                            changes.priority_id = Some(task.priority_id.clone());
-                        }
-                    }
-                    if changes == TaskChanges::default() {
-                        app.mode = Mode::Normal;
-                        app.editing_task = None;
-                        app.input_buffer.clear();
-                        return Ok((false, false));
-                    }
-                    match shell::edit_task(db, &task.id, &changes) {
-                        Ok(()) => {
+                        if changes == TaskChanges::default() {
                             app.mode = Mode::Normal;
                             app.editing_task = None;
                             app.input_buffer.clear();
-                            Ok((true, false))
+                            return Ok((false, false));
                         }
-                        Err(e) => {
-                            app.set_error(e.to_string());
-                            Ok((false, false))
+                        match shell::edit_task(db, &task.id, &changes) {
+                            Ok(()) => {
+                                app.mode = Mode::Normal;
+                                app.editing_task = None;
+                                app.input_buffer.clear();
+                                Ok((true, false))
+                            }
+                            Err(e) => {
+                                app.set_error(e.to_string());
+                                Ok((false, false))
+                            }
                         }
                     }
                 } else {
