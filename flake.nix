@@ -63,9 +63,11 @@
       devShells.default = pkgs.mkShell {
         buildInputs = [
           rustToolchain
-          (pkgs.cargo-watch.overrideAttrs (old: {
-            cargoBuildNoDefaultFeatures = true;
-          }))
+          # File watcher for `cargo` reruns. Was cargo-watch, but building it
+          # from source fails on aarch64-darwin under the current nixpkgs pin:
+          # its cctools `ld` hits a `Trace/BPT trap: 5` linking the auditable
+          # binary. bacon ships prebuilt in the binary cache, avoiding the link.
+          pkgs.bacon
           pkgs.pkg-config
           pkgs.sqlite
           pkgs.just
