@@ -5,7 +5,12 @@ use super::app::{Action, ConfirmContext, Mode};
 /// Map a key event and current mode to an Action.
 ///
 /// This is a pure function — no I/O — so it can be unit-tested directly.
-pub fn handle_input(key: KeyEvent, mode: Mode, confirm_context: Option<ConfirmContext>) -> Action {
+pub fn handle_input(
+    key: KeyEvent,
+    mode: Mode,
+    confirm_context: Option<ConfirmContext>,
+    edit_field: usize,
+) -> Action {
     // Only handle key press (not release/repeat)
     if key.kind != KeyEventKind::Press {
         return Action::None;
@@ -14,7 +19,8 @@ pub fn handle_input(key: KeyEvent, mode: Mode, confirm_context: Option<ConfirmCo
     match mode {
         Mode::Normal => handle_normal(key),
         Mode::Insert => handle_insert(key),
-        Mode::Edit => handle_edit(key),
+        Mode::ViewTask => handle_view_task(key),
+        Mode::EditField => handle_edit_field(key, edit_field),
         Mode::Column => handle_column_mode(key),
         Mode::Confirm => handle_confirm(key, confirm_context.unwrap_or(ConfirmContext::TaskDelete)),
         Mode::Help => handle_help(key),
@@ -33,7 +39,7 @@ fn handle_normal(key: KeyEvent) -> Action {
         (_, event::KeyCode::Char('k')) => Action::NavigatePrevTask,
         // Operations
         (_, event::KeyCode::Char('a')) => Action::AddTask,
-        (_, event::KeyCode::Char('e')) => Action::EditTask,
+        (_, event::KeyCode::Enter) => Action::ViewTask,
         (_, event::KeyCode::Char('m')) => Action::EnterMoveMode,
         (_, event::KeyCode::Char('d')) => Action::DeleteTask,
         (_, event::KeyCode::Char('H')) => Action::MoveTaskPrevColumn,
@@ -56,12 +62,26 @@ fn handle_insert(key: KeyEvent) -> Action {
     }
 }
 
-fn handle_edit(key: KeyEvent) -> Action {
+fn handle_view_task(key: KeyEvent) -> Action {
+    match key.code {
+        event::KeyCode::Tab | event::KeyCode::Char('j') => Action::CycleField,
+        event::KeyCode::Char('k') => Action::CycleFieldPrev,
+        event::KeyCode::Char('i') => Action::EditField,
+        event::KeyCode::Enter => Action::Save,
+        event::KeyCode::Esc => Action::Cancel,
+        _ => Action::None,
+    }
+}
+
+fn handle_edit_field(key: KeyEvent, edit_field: usize) -> Action {
+    let is_priority_field = edit_field == 2;
     match key.code {
         event::KeyCode::Enter => Action::Save,
         event::KeyCode::Esc => Action::Cancel,
-        event::KeyCode::Tab => Action::CycleField,
-        event::KeyCode::Char('p') | event::KeyCode::Char('P') => Action::CyclePriority,
+        event::KeyCode::Tab if is_priority_field => Action::CyclePriority,
+        event::KeyCode::Char('p') | event::KeyCode::Char('P') if is_priority_field => {
+            Action::CyclePriority
+        }
         event::KeyCode::Char(c) => Action::InsertText(c.to_string()),
         event::KeyCode::Backspace => Action::DeleteChar,
         _ => Action::None,
@@ -160,9 +180,9 @@ mod tests {
 
     #[test]
     fn normal_quit() {
-        assert_eq!(handle_input(key('q'), Mode::Normal, None), Action::Quit);
+        assert_eq!(handle_input(key('q'), Mode::Normal, None, 0), Action::Quit);
         assert_eq!(
-            handle_input(key_code(KeyCode::Esc), Mode::Normal, None),
+            handle_input(key_code(KeyCode::Esc), Mode::Normal, None, 0),
             Action::Quit
         );
     }
@@ -170,7 +190,7 @@ mod tests {
     #[test]
     fn normal_prev_column() {
         assert_eq!(
-            handle_input(key('h'), Mode::Normal, None),
+            handle_input(key('h'), Mode::Normal, None, 0),
             Action::NavigatePrevColumn
         );
     }
@@ -178,7 +198,7 @@ mod tests {
     #[test]
     fn normal_next_column() {
         assert_eq!(
-            handle_input(key('l'), Mode::Normal, None),
+            handle_input(key('l'), Mode::Normal, None, 0),
             Action::NavigateNextColumn
         );
     }
@@ -186,7 +206,7 @@ mod tests {
     #[test]
     fn normal_next_task() {
         assert_eq!(
-            handle_input(key('j'), Mode::Normal, None),
+            handle_input(key('j'), Mode::Normal, None, 0),
             Action::NavigateNextTask
         );
     }
@@ -194,25 +214,31 @@ mod tests {
     #[test]
     fn normal_prev_task() {
         assert_eq!(
-            handle_input(key('k'), Mode::Normal, None),
+            handle_input(key('k'), Mode::Normal, None, 0),
             Action::NavigatePrevTask
         );
     }
 
     #[test]
     fn normal_add_task() {
-        assert_eq!(handle_input(key('a'), Mode::Normal, None), Action::AddTask);
+        assert_eq!(
+            handle_input(key('a'), Mode::Normal, None, 0),
+            Action::AddTask
+        );
     }
 
     #[test]
-    fn normal_edit_task() {
-        assert_eq!(handle_input(key('e'), Mode::Normal, None), Action::EditTask);
+    fn normal_enter_view_task() {
+        assert_eq!(
+            handle_input(key_code(KeyCode::Enter), Mode::Normal, None, 0),
+            Action::ViewTask
+        );
     }
 
     #[test]
     fn normal_enter_move_mode() {
         assert_eq!(
-            handle_input(key('m'), Mode::Normal, None),
+            handle_input(key('m'), Mode::Normal, None, 0),
             Action::EnterMoveMode
         );
     }
@@ -220,7 +246,7 @@ mod tests {
     #[test]
     fn normal_delete_task() {
         assert_eq!(
-            handle_input(key('d'), Mode::Normal, None),
+            handle_input(key('d'), Mode::Normal, None, 0),
             Action::DeleteTask
         );
     }
@@ -228,7 +254,7 @@ mod tests {
     #[test]
     fn normal_move_task_prev_column() {
         assert_eq!(
-            handle_input(key('H'), Mode::Normal, None),
+            handle_input(key('H'), Mode::Normal, None, 0),
             Action::MoveTaskPrevColumn
         );
     }
@@ -236,7 +262,7 @@ mod tests {
     #[test]
     fn normal_move_task_next_column() {
         assert_eq!(
-            handle_input(key('L'), Mode::Normal, None),
+            handle_input(key('L'), Mode::Normal, None, 0),
             Action::MoveTaskNextColumn
         );
     }
@@ -244,7 +270,7 @@ mod tests {
     #[test]
     fn normal_move_task_down() {
         assert_eq!(
-            handle_input(key('J'), Mode::Normal, None),
+            handle_input(key('J'), Mode::Normal, None, 0),
             Action::MoveTaskDown
         );
     }
@@ -252,7 +278,7 @@ mod tests {
     #[test]
     fn normal_move_task_up() {
         assert_eq!(
-            handle_input(key('K'), Mode::Normal, None),
+            handle_input(key('K'), Mode::Normal, None, 0),
             Action::MoveTaskUp
         );
     }
@@ -260,7 +286,7 @@ mod tests {
     #[test]
     fn normal_enter_column_mode() {
         assert_eq!(
-            handle_input(key('C'), Mode::Normal, None),
+            handle_input(key('C'), Mode::Normal, None, 0),
             Action::EnterColumnMode
         );
     }
@@ -268,14 +294,14 @@ mod tests {
     #[test]
     fn normal_toggle_help() {
         assert_eq!(
-            handle_input(key('?'), Mode::Normal, None),
+            handle_input(key('?'), Mode::Normal, None, 0),
             Action::ToggleHelp
         );
     }
 
     #[test]
     fn normal_unknown_key() {
-        assert_eq!(handle_input(key('x'), Mode::Normal, None), Action::None);
+        assert_eq!(handle_input(key('x'), Mode::Normal, None, 0), Action::None);
     }
 
     // ── Insert mode ──────────────────────────────────────────────────────
@@ -283,7 +309,7 @@ mod tests {
     #[test]
     fn insert_save() {
         assert_eq!(
-            handle_input(key_code(KeyCode::Enter), Mode::Insert, None),
+            handle_input(key_code(KeyCode::Enter), Mode::Insert, None, 0),
             Action::Save
         );
     }
@@ -291,7 +317,7 @@ mod tests {
     #[test]
     fn insert_cancel() {
         assert_eq!(
-            handle_input(key_code(KeyCode::Esc), Mode::Insert, None),
+            handle_input(key_code(KeyCode::Esc), Mode::Insert, None, 0),
             Action::Cancel
         );
     }
@@ -299,7 +325,7 @@ mod tests {
     #[test]
     fn insert_text() {
         assert_eq!(
-            handle_input(key('a'), Mode::Insert, None),
+            handle_input(key('a'), Mode::Insert, None, 0),
             Action::InsertText("a".to_string())
         );
     }
@@ -307,34 +333,133 @@ mod tests {
     #[test]
     fn insert_backspace() {
         assert_eq!(
-            handle_input(key_code(KeyCode::Backspace), Mode::Insert, None),
+            handle_input(key_code(KeyCode::Backspace), Mode::Insert, None, 0),
             Action::DeleteChar
         );
     }
 
-    // ── Edit mode ────────────────────────────────────────────────────────
+    // ── ViewTask mode ────────────────────────────────────────────────────
 
     #[test]
-    fn edit_save() {
+    fn view_task_cycle_field() {
         assert_eq!(
-            handle_input(key_code(KeyCode::Enter), Mode::Edit, None),
+            handle_input(key_code(KeyCode::Tab), Mode::ViewTask, None, 0),
+            Action::CycleField
+        );
+        assert_eq!(
+            handle_input(key('j'), Mode::ViewTask, None, 0),
+            Action::CycleField
+        );
+    }
+
+    #[test]
+    fn view_task_cycle_field_prev() {
+        assert_eq!(
+            handle_input(key('k'), Mode::ViewTask, None, 0),
+            Action::CycleFieldPrev
+        );
+    }
+
+    #[test]
+    fn view_task_edit_field() {
+        assert_eq!(
+            handle_input(key('i'), Mode::ViewTask, None, 0),
+            Action::EditField
+        );
+    }
+
+    #[test]
+    fn view_task_save() {
+        assert_eq!(
+            handle_input(key_code(KeyCode::Enter), Mode::ViewTask, None, 0),
             Action::Save
         );
     }
 
     #[test]
-    fn edit_cancel() {
+    fn view_task_cancel() {
         assert_eq!(
-            handle_input(key_code(KeyCode::Esc), Mode::Edit, None),
+            handle_input(key_code(KeyCode::Esc), Mode::ViewTask, None, 0),
+            Action::Cancel
+        );
+    }
+
+    // ── EditField mode ───────────────────────────────────────────────────
+
+    #[test]
+    fn edit_field_insert_text() {
+        assert_eq!(
+            handle_input(key('a'), Mode::EditField, None, 0),
+            Action::InsertText("a".to_string())
+        );
+    }
+
+    #[test]
+    fn edit_field_delete_char() {
+        assert_eq!(
+            handle_input(key_code(KeyCode::Backspace), Mode::EditField, None, 0),
+            Action::DeleteChar
+        );
+    }
+
+    #[test]
+    fn edit_field_save() {
+        assert_eq!(
+            handle_input(key_code(KeyCode::Enter), Mode::EditField, None, 0),
+            Action::Save
+        );
+    }
+
+    #[test]
+    fn edit_field_cancel() {
+        assert_eq!(
+            handle_input(key_code(KeyCode::Esc), Mode::EditField, None, 0),
             Action::Cancel
         );
     }
 
     #[test]
-    fn edit_cycle_field() {
+    fn edit_field_cycle_priority_tab() {
+        // Tab cycles priority only on the priority field (edit_field == 2)
         assert_eq!(
-            handle_input(key_code(KeyCode::Tab), Mode::Edit, None),
-            Action::CycleField
+            handle_input(key_code(KeyCode::Tab), Mode::EditField, None, 2),
+            Action::CyclePriority
+        );
+        // Tab is ignored on text fields
+        assert_eq!(
+            handle_input(key_code(KeyCode::Tab), Mode::EditField, None, 0),
+            Action::None
+        );
+        assert_eq!(
+            handle_input(key_code(KeyCode::Tab), Mode::EditField, None, 1),
+            Action::None
+        );
+    }
+
+    #[test]
+    fn edit_field_cycle_priority_p() {
+        // p/P cycle priority only on the priority field (edit_field == 2)
+        assert_eq!(
+            handle_input(key('p'), Mode::EditField, None, 2),
+            Action::CyclePriority
+        );
+        assert_eq!(
+            handle_input(key('P'), Mode::EditField, None, 2),
+            Action::CyclePriority
+        );
+        // p/P are typed as text on title field
+        assert_eq!(
+            handle_input(key('p'), Mode::EditField, None, 0),
+            Action::InsertText("p".to_string())
+        );
+        assert_eq!(
+            handle_input(key('P'), Mode::EditField, None, 0),
+            Action::InsertText("P".to_string())
+        );
+        // p/P are typed as text on description field
+        assert_eq!(
+            handle_input(key('p'), Mode::EditField, None, 1),
+            Action::InsertText("p".to_string())
         );
     }
 
@@ -343,7 +468,7 @@ mod tests {
     #[test]
     fn column_add() {
         assert_eq!(
-            handle_input(key('a'), Mode::Column, None),
+            handle_input(key('a'), Mode::Column, None, 0),
             Action::ColumnAdd
         );
     }
@@ -351,7 +476,7 @@ mod tests {
     #[test]
     fn column_rename() {
         assert_eq!(
-            handle_input(key('r'), Mode::Column, None),
+            handle_input(key('r'), Mode::Column, None, 0),
             Action::ColumnRename
         );
     }
@@ -359,7 +484,7 @@ mod tests {
     #[test]
     fn column_delete() {
         assert_eq!(
-            handle_input(key('d'), Mode::Column, None),
+            handle_input(key('d'), Mode::Column, None, 0),
             Action::ColumnDelete
         );
     }
@@ -367,7 +492,7 @@ mod tests {
     #[test]
     fn column_move_left() {
         assert_eq!(
-            handle_input(key('h'), Mode::Column, None),
+            handle_input(key('h'), Mode::Column, None, 0),
             Action::ColumnMoveLeft
         );
     }
@@ -375,7 +500,7 @@ mod tests {
     #[test]
     fn column_move_right() {
         assert_eq!(
-            handle_input(key('l'), Mode::Column, None),
+            handle_input(key('l'), Mode::Column, None, 0),
             Action::ColumnMoveRight
         );
     }
@@ -383,7 +508,7 @@ mod tests {
     #[test]
     fn column_exit() {
         assert_eq!(
-            handle_input(key_code(KeyCode::Esc), Mode::Column, None),
+            handle_input(key_code(KeyCode::Esc), Mode::Column, None, 0),
             Action::ColumnExit
         );
     }
@@ -393,11 +518,11 @@ mod tests {
     #[test]
     fn confirm_task_yes() {
         assert_eq!(
-            handle_input(key('y'), Mode::Confirm, Some(ConfirmContext::TaskDelete)),
+            handle_input(key('y'), Mode::Confirm, Some(ConfirmContext::TaskDelete), 0),
             Action::ConfirmYes
         );
         assert_eq!(
-            handle_input(key('Y'), Mode::Confirm, Some(ConfirmContext::TaskDelete)),
+            handle_input(key('Y'), Mode::Confirm, Some(ConfirmContext::TaskDelete), 0),
             Action::ConfirmYes
         );
     }
@@ -405,18 +530,19 @@ mod tests {
     #[test]
     fn confirm_task_no() {
         assert_eq!(
-            handle_input(key('n'), Mode::Confirm, Some(ConfirmContext::TaskDelete)),
+            handle_input(key('n'), Mode::Confirm, Some(ConfirmContext::TaskDelete), 0),
             Action::ConfirmNo
         );
         assert_eq!(
-            handle_input(key('N'), Mode::Confirm, Some(ConfirmContext::TaskDelete)),
+            handle_input(key('N'), Mode::Confirm, Some(ConfirmContext::TaskDelete), 0),
             Action::ConfirmNo
         );
         assert_eq!(
             handle_input(
                 key_code(KeyCode::Esc),
                 Mode::Confirm,
-                Some(ConfirmContext::TaskDelete)
+                Some(ConfirmContext::TaskDelete),
+                0
             ),
             Action::ConfirmNo
         );
@@ -427,7 +553,12 @@ mod tests {
     #[test]
     fn confirm_column_move_to_first() {
         assert_eq!(
-            handle_input(key('m'), Mode::Confirm, Some(ConfirmContext::ColumnDelete)),
+            handle_input(
+                key('m'),
+                Mode::Confirm,
+                Some(ConfirmContext::ColumnDelete),
+                0
+            ),
             Action::ConfirmMoveToFirst
         );
     }
@@ -435,7 +566,12 @@ mod tests {
     #[test]
     fn confirm_column_delete_all() {
         assert_eq!(
-            handle_input(key('d'), Mode::Confirm, Some(ConfirmContext::ColumnDelete)),
+            handle_input(
+                key('d'),
+                Mode::Confirm,
+                Some(ConfirmContext::ColumnDelete),
+                0
+            ),
             Action::ConfirmDeleteAll
         );
     }
@@ -443,14 +579,20 @@ mod tests {
     #[test]
     fn confirm_column_cancel() {
         assert_eq!(
-            handle_input(key('n'), Mode::Confirm, Some(ConfirmContext::ColumnDelete)),
+            handle_input(
+                key('n'),
+                Mode::Confirm,
+                Some(ConfirmContext::ColumnDelete),
+                0
+            ),
             Action::ConfirmNo
         );
         assert_eq!(
             handle_input(
                 key_code(KeyCode::Esc),
                 Mode::Confirm,
-                Some(ConfirmContext::ColumnDelete)
+                Some(ConfirmContext::ColumnDelete),
+                0
             ),
             Action::ConfirmNo
         );
@@ -461,15 +603,15 @@ mod tests {
     #[test]
     fn help_close() {
         assert_eq!(
-            handle_input(key('?'), Mode::Help, None),
+            handle_input(key('?'), Mode::Help, None, 0),
             Action::ModeChange(Mode::Normal)
         );
         assert_eq!(
-            handle_input(key_code(KeyCode::Esc), Mode::Help, None),
+            handle_input(key_code(KeyCode::Esc), Mode::Help, None, 0),
             Action::ModeChange(Mode::Normal)
         );
         assert_eq!(
-            handle_input(key('q'), Mode::Help, None),
+            handle_input(key('q'), Mode::Help, None, 0),
             Action::ModeChange(Mode::Normal)
         );
     }
@@ -479,7 +621,7 @@ mod tests {
     #[test]
     fn move_target_prev() {
         assert_eq!(
-            handle_input(key('h'), Mode::Move, None),
+            handle_input(key('h'), Mode::Move, None, 0),
             Action::MoveTargetPrev
         );
     }
@@ -487,7 +629,7 @@ mod tests {
     #[test]
     fn move_target_next() {
         assert_eq!(
-            handle_input(key('l'), Mode::Move, None),
+            handle_input(key('l'), Mode::Move, None, 0),
             Action::MoveTargetNext
         );
     }
@@ -495,7 +637,7 @@ mod tests {
     #[test]
     fn move_confirm() {
         assert_eq!(
-            handle_input(key_code(KeyCode::Enter), Mode::Move, None),
+            handle_input(key_code(KeyCode::Enter), Mode::Move, None, 0),
             Action::MoveConfirm
         );
     }
@@ -503,7 +645,7 @@ mod tests {
     #[test]
     fn move_cancel() {
         assert_eq!(
-            handle_input(key_code(KeyCode::Esc), Mode::Move, None),
+            handle_input(key_code(KeyCode::Esc), Mode::Move, None, 0),
             Action::MoveCancel
         );
     }
@@ -513,6 +655,9 @@ mod tests {
     fn key_release_ignored() {
         let mut release_key = key('q');
         release_key.kind = KeyEventKind::Release;
-        assert_eq!(handle_input(release_key, Mode::Normal, None), Action::None);
+        assert_eq!(
+            handle_input(release_key, Mode::Normal, None, 0),
+            Action::None
+        );
     }
 }

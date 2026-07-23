@@ -92,7 +92,7 @@ fn run_tui_loop(
         let action = if crossterm::event::poll(std::time::Duration::from_millis(50))? {
             if let Ok(Event::Key(key)) = crossterm::event::read() {
                 if key.kind == KeyEventKind::Press {
-                    handle_input(key, app.mode, app.confirm_context)
+                    handle_input(key, app.mode, app.confirm_context, app.edit_field)
                 } else {
                     Action::None
                 }
@@ -209,18 +209,34 @@ fn execute_action(app: &mut App, db: &shell::Db, action: Action) -> Result<(bool
             });
             app.edit_field = 0;
             app.input_buffer.clear();
-            app.mode = Mode::Edit;
+            app.mode = Mode::EditField;
             Ok((false, false))
         }
-        Action::EditTask => {
+        Action::ViewTask => {
             let task_clone = app.focused_task().cloned();
             if let Some(task) = task_clone {
                 app.editing_task = Some(task.clone());
                 app.edit_field = 0;
-                app.input_buffer = task.title;
-                app.mode = Mode::Edit;
+                app.input_buffer = task.title.clone();
+                app.mode = Mode::ViewTask;
             } else {
-                app.set_error("No task selected to edit".into());
+                app.set_error("No task selected to view".into());
+            }
+            Ok((false, false))
+        }
+        Action::EditField => {
+            if app.editing_task.is_some() {
+                // Update input buffer with current field value
+                if let Some(ref task) = app.editing_task {
+                    match app.edit_field {
+                        0 => app.input_buffer = task.title.clone(),
+                        1 => app.input_buffer = task.description.clone(),
+                        _ => app.input_buffer.clear(),
+                    }
+                }
+                app.mode = Mode::EditField;
+            } else {
+                app.set_error("No task to edit".into());
             }
             Ok((false, false))
         }
@@ -613,30 +629,33 @@ fn execute_action(app: &mut App, db: &shell::Db, action: Action) -> Result<(bool
                         Ok((false, false))
                     }
                 }
-            } else if app.mode == Mode::Edit {
-                // Save edited task — first commit current field, then diff against original
+            } else if app.mode == Mode::EditField {
+                // Save current field from input_buffer into editing_task, return to ViewTask
                 if let Some(ref mut task) = app.editing_task {
-                    // Save the currently active field from input_buffer into editing_task
                     match app.edit_field {
                         0 => task.title = app.input_buffer.clone(),
                         1 => task.description = app.input_buffer.clone(),
                         _ => {}
                     }
-                    let title = task.title.trim().to_string();
-                    if title.is_empty() {
+                }
+                app.mode = Mode::ViewTask;
+                Ok((false, false))
+            } else if app.mode == Mode::ViewTask {
+                // Validate and save the task (add new or edit existing)
+                if let Some(ref task) = app.editing_task {
+                    if task.title.trim().is_empty() {
                         app.set_error("Title cannot be empty".into());
                         return Ok((false, false));
                     }
-
-                    // New task creation (id is empty)
-                    if task.id.is_empty() {
+                    let task_clone = task.clone();
+                    if task_clone.id.is_empty() {
+                        // New task creation
                         if let Some(ref state) = app.state {
                             let col = state
                                 .columns
                                 .get(app.focused_col_idx)
                                 .ok_or_else(|| anyhow::anyhow!("no focused column"))?;
-                            // Resolve priority: use task's priority_id if set, else default to "medium"
-                            let priority_id = if task.priority_id.is_empty() {
+                            let priority_id = if task_clone.priority_id.is_empty() {
                                 state
                                     .priorities
                                     .iter()
@@ -644,17 +663,21 @@ fn execute_action(app: &mut App, db: &shell::Db, action: Action) -> Result<(bool
                                     .map(|p| p.id.clone())
                                     .unwrap_or_default()
                             } else {
-                                task.priority_id.clone()
+                                task_clone.priority_id.clone()
                             };
-                            // Look up priority name
                             let priority_name = state
                                 .priorities
                                 .iter()
                                 .find(|p| p.id == priority_id)
                                 .map(|p| p.name.as_str())
                                 .unwrap_or("medium");
-                            let description = task.description.clone();
-                            match shell::add_task(db, &col.name, &title, &description, priority_name) {
+                            match shell::add_task(
+                                db,
+                                &col.name,
+                                &task_clone.title,
+                                &task_clone.description,
+                                priority_name,
+                            ) {
                                 Ok(_) => {
                                     app.mode = Mode::Normal;
                                     app.editing_task = None;
@@ -671,45 +694,47 @@ fn execute_action(app: &mut App, db: &shell::Db, action: Action) -> Result<(bool
                             Ok((false, false))
                         }
                     } else {
-                        // Edit existing task
-                        // Diff editing_task against the original in board state
-                        let original = app
-                            .state
-                            .as_ref()
-                            .and_then(|s| s.tasks.iter().find(|t| t.id == task.id));
-                        let mut changes = TaskChanges::default();
-                        if let Some(orig) = original {
-                            if task.title != orig.title {
-                                changes.title = Some(task.title.clone());
+                        // Edit existing task — diff against original in board state
+                        if let Some(ref state) = app.state {
+                            let original = state.tasks.iter().find(|t| t.id == task_clone.id);
+                            let mut changes = TaskChanges::default();
+                            if let Some(orig) = original {
+                                if task_clone.title != orig.title {
+                                    changes.title = Some(task_clone.title.clone());
+                                }
+                                if task_clone.description != orig.description {
+                                    changes.description = Some(task_clone.description.clone());
+                                }
+                                if task_clone.priority_id != orig.priority_id {
+                                    changes.priority_id = Some(task_clone.priority_id.clone());
+                                }
                             }
-                            if task.description != orig.description {
-                                changes.description = Some(task.description.clone());
-                            }
-                            if task.priority_id != orig.priority_id {
-                                changes.priority_id = Some(task.priority_id.clone());
-                            }
-                        }
-                        if changes == TaskChanges::default() {
-                            app.mode = Mode::Normal;
-                            app.editing_task = None;
-                            app.input_buffer.clear();
-                            return Ok((false, false));
-                        }
-                        match shell::edit_task(db, &task.id, &changes) {
-                            Ok(()) => {
+                            if changes == TaskChanges::default() {
                                 app.mode = Mode::Normal;
                                 app.editing_task = None;
                                 app.input_buffer.clear();
-                                Ok((true, false))
+                                return Ok((false, false));
                             }
-                            Err(e) => {
-                                app.set_error(e.to_string());
-                                Ok((false, false))
+                            match shell::edit_task(db, &task_clone.id, &changes) {
+                                Ok(()) => {
+                                    app.mode = Mode::Normal;
+                                    app.editing_task = None;
+                                    app.input_buffer.clear();
+                                    Ok((true, false))
+                                }
+                                Err(e) => {
+                                    app.set_error(e.to_string());
+                                    Ok((false, false))
+                                }
                             }
+                        } else {
+                            app.set_error("No board state".into());
+                            Ok((false, false))
                         }
                     }
                 } else {
                     app.mode = Mode::Normal;
+                    app.editing_task = None;
                     app.input_buffer.clear();
                     Ok((false, false))
                 }
@@ -720,36 +745,71 @@ fn execute_action(app: &mut App, db: &shell::Db, action: Action) -> Result<(bool
             }
         }
         Action::Cancel => {
-            app.mode = Mode::Normal;
-            app.editing_task = None;
-            app.input_buffer.clear();
-            Ok((false, false))
-        }
-        Action::CycleField => {
-            if app.mode == Mode::Edit {
-                // Save current field before cycling
-                if let Some(ref mut task) = app.editing_task {
-                    match app.edit_field {
-                        0 => task.title = app.input_buffer.clone(),
-                        1 => task.description = app.input_buffer.clone(),
-                        2 => {}
-                        _ => {}
-                    }
-                }
-
-                if app.edit_field < 2 {
-                    app.edit_field += 1;
-                } else {
-                    app.edit_field = 0;
-                }
-
-                // Update input buffer for the new field
+            if app.mode == Mode::EditField {
+                // Restore input_buffer from the current field of editing_task
                 if let Some(ref task) = app.editing_task {
                     match app.edit_field {
                         0 => app.input_buffer = task.title.clone(),
                         1 => app.input_buffer = task.description.clone(),
                         _ => app.input_buffer.clear(),
                     }
+                }
+                app.mode = Mode::ViewTask;
+            } else {
+                app.mode = Mode::Normal;
+                app.editing_task = None;
+                app.input_buffer.clear();
+            }
+            Ok((false, false))
+        }
+        Action::CycleField => {
+            // Save current field before cycling (in EditField mode)
+            if app.mode == Mode::EditField {
+                if let Some(ref mut task) = app.editing_task {
+                    match app.edit_field {
+                        0 => task.title = app.input_buffer.clone(),
+                        1 => task.description = app.input_buffer.clone(),
+                        _ => {}
+                    }
+                }
+            }
+
+            if app.edit_field < 2 {
+                app.edit_field += 1;
+            } else {
+                app.edit_field = 0;
+            }
+
+            // Update input buffer for the new field
+            if let Some(ref task) = app.editing_task {
+                match app.edit_field {
+                    0 => app.input_buffer = task.title.clone(),
+                    1 => app.input_buffer = task.description.clone(),
+                    _ => app.input_buffer.clear(),
+                }
+            }
+            Ok((false, false))
+        }
+        Action::CycleFieldPrev => {
+            // Save current field before cycling (in EditField mode)
+            if app.mode == Mode::EditField {
+                if let Some(ref mut task) = app.editing_task {
+                    match app.edit_field {
+                        0 => task.title = app.input_buffer.clone(),
+                        1 => task.description = app.input_buffer.clone(),
+                        _ => {}
+                    }
+                }
+            }
+
+            app.edit_field = app.edit_field.saturating_sub(1);
+
+            // Update input buffer for the new field
+            if let Some(ref task) = app.editing_task {
+                match app.edit_field {
+                    0 => app.input_buffer = task.title.clone(),
+                    1 => app.input_buffer = task.description.clone(),
+                    _ => app.input_buffer.clear(),
                 }
             }
             Ok((false, false))
