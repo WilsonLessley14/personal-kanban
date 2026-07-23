@@ -21,12 +21,12 @@
       pkgs = import nixpkgs {
         inherit system overlays;
       };
-      lib = pkgs.lib;
-      craneLib = (crane.mkLib pkgs).overrideToolchain (
+      inherit (pkgs) lib;
+      craneLib =
+        (crane.mkLib pkgs).overrideToolchain
         (pkgs.rust-bin.stable.latest.default.override {
           extensions = ["rust-src" "clippy" "rustfmt"];
-        }).out
-      );
+        }).out;
 
       # Common sources
       src = ./.;
@@ -37,9 +37,10 @@
       ];
 
       # Dev shell toolchain with rust-analyzer
-      rustToolchain = (pkgs.rust-bin.stable.latest.default.override {
-        extensions = ["rust-src" "clippy" "rustfmt" "rust-analyzer"];
-      }).out;
+      rustToolchain =
+        (pkgs.rust-bin.stable.latest.default.override {
+          extensions = ["rust-src" "clippy" "rustfmt" "rust-analyzer"];
+        }).out;
 
       kanbanPackage = craneLib.buildPackage {
         inherit src;
@@ -61,20 +62,22 @@
       packages.default = kanbanPackage;
 
       devShells.default = pkgs.mkShell {
-        buildInputs = [
-          rustToolchain
-          # File watcher for `cargo` reruns. Was cargo-watch, but building it
-          # from source fails on aarch64-darwin under the current nixpkgs pin:
-          # its cctools `ld` hits a `Trace/BPT trap: 5` linking the auditable
-          # binary. bacon ships prebuilt in the binary cache, avoiding the link.
-          pkgs.bacon
-          pkgs.pkg-config
-          pkgs.sqlite
-          pkgs.just
-          pkgs.alejandra
-          pkgs.statix
-          pkgs.cargo-tarpaulin
-        ] ++ darwinBuildInputs;
+        buildInputs =
+          [
+            rustToolchain
+            # File watcher for `cargo` reruns. Was cargo-watch, but building it
+            # from source fails on aarch64-darwin under the current nixpkgs pin:
+            # its cctools `ld` hits a `Trace/BPT trap: 5` linking the auditable
+            # binary. bacon ships prebuilt in the binary cache, avoiding the link.
+            pkgs.bacon
+            pkgs.pkg-config
+            pkgs.sqlite
+            pkgs.just
+            pkgs.alejandra
+            pkgs.statix
+            pkgs.cargo-tarpaulin
+          ]
+          ++ darwinBuildInputs;
       };
 
       formatter = pkgs.alejandra;

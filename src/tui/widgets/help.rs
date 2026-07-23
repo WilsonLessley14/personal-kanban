@@ -9,7 +9,7 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame<'_>, area: Rect) {
     let lines = vec![
         Line::raw("  Normal Mode                                   "),
         Line::raw("  h/l  prev/next column    j/k  prev/next task        "),
-        Line::raw("  a  add task             e  edit task                "),
+        Line::raw("  a  add task             Enter  view task             "),
         Line::raw("  m  move mode            d  delete task              "),
         Line::raw("  H/L  move task col      J/K  reorder task           "),
         Line::raw("  C  column mode          ?  toggle help              "),
@@ -21,8 +21,10 @@ pub fn render_help_overlay(frame: &mut ratatui::Frame<'_>, area: Rect) {
         Line::raw("  Column Mode                                 "),
         Line::raw("  a  add  r  rename  d  delete  h/l  reorder  Esc exit"),
         Line::raw("                                                  "),
-        Line::raw("  Insert/Edit                                 "),
-        Line::raw("  Enter  save  Esc  cancel  Tab  cycle field (edit)   "),
+        Line::raw("  View Task                                   "),
+        Line::raw("  Tab/j/k  cycle field  i  edit  Enter save  Esc cancel"),
+        Line::raw("  Edit Field                                  "),
+        Line::raw("  Enter  save  Esc  cancel  Tab/p cycle (priority)    "),
         Line::raw("                                                  "),
     ];
 

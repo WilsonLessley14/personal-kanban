@@ -31,7 +31,7 @@ pub fn render_board(frame: &mut ratatui::Frame<'_>, app: &mut App) {
     match app.mode {
         Mode::Help => render_help_overlay(frame, content),
         Mode::Insert => render_insert_overlay(frame, content, app),
-        Mode::Edit => render_edit_overlay(frame, content, app),
+        Mode::ViewTask | Mode::EditField => render_edit_overlay(frame, content, app),
         Mode::Confirm => render_confirm_overlay(frame, content, app),
         _ => render_column_panels(frame, content, app),
     }
@@ -60,11 +60,16 @@ fn render_status_bar(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
         err.clone()
     } else {
         match app.mode {
-            Mode::Normal => "h/l col | j/k task | a add | e edit | m move | d del | H/L move-task | J/K reorder | C col-mode | ? help | q quit".to_string(),
+            Mode::Normal => "h/l col | j/k task | a add | enter view | m move | d del | H/L move-task | J/K reorder | C col-mode | ? help | q quit".to_string(),
             Mode::Move => "MOVE MODE — h/l target col | Enter confirm | Esc cancel".to_string(),
             Mode::Column => "COLUMN MODE — a add | r rename | d delete | h/l reorder | Esc exit".to_string(),
             Mode::Insert => "INSERT — Enter save | Esc cancel".to_string(),
-            Mode::Edit => "EDIT — Enter save | Esc cancel | Tab cycle field | p cycle priority".to_string(),
+            Mode::ViewTask => "VIEW — Tab/j/k cycle | i edit | Enter save | Esc cancel".to_string(),
+            Mode::EditField => match app.edit_field {
+                0 | 1 => "EDIT FIELD — Enter save | Esc cancel".to_string(),
+                2 => "EDIT PRIORITY — Tab/p cycle | Enter save | Esc cancel".to_string(),
+                _ => "EDIT — Enter save | Esc cancel".to_string(),
+            },
             Mode::Confirm => "CONFIRM — y/N".to_string(),
             Mode::Help => "?/Esc/q close".to_string(),
         }

@@ -19,8 +19,7 @@ pub fn render_task_card(
     let card_style = if is_selected {
         Style::default().fg(Color::Magenta)
     } else {
-        Style::default()
-            .remove_modifier(Modifier::BOLD)
+        Style::default().remove_modifier(Modifier::BOLD)
     };
 
     let border_style = if is_selected {
@@ -28,8 +27,7 @@ pub fn render_task_card(
             .add_modifier(Modifier::BOLD)
             .fg(Color::Magenta)
     } else {
-        Style::default()
-            .remove_modifier(Modifier::BOLD)
+        Style::default().remove_modifier(Modifier::BOLD)
     };
 
     let prio_name = app

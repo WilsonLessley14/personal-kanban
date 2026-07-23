@@ -5,7 +5,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Wrap};
 
-use crate::tui::app::{App, ConfirmContext};
+use crate::tui::app::{App, ConfirmContext, Mode};
 
 /// Render the insert task popup overlay.
 pub fn render_insert_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App) {
@@ -100,7 +100,7 @@ pub fn render_edit_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App
         } else {
             &task.title
         }),
-        if app.edit_field == 0 {
+        if app.mode == Mode::EditField && app.edit_field == 0 {
             Span::raw("█")
         } else {
             Span::raw("")
@@ -122,7 +122,7 @@ pub fn render_edit_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &App
         } else {
             &task.description
         }),
-        if app.edit_field == 1 {
+        if app.mode == Mode::EditField && app.edit_field == 1 {
             Span::raw("█")
         } else {
             Span::raw("")
